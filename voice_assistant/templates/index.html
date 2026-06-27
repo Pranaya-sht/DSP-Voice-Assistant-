@@ -348,10 +348,101 @@
 
         /* Audio feedback visual styling */
         audio {
+            border-radius: 8px;
+            background: var(--card);
+            filter: invert(1) hue-rotate(180deg) brightness(0.8);
+        }
+
+        /* Saved Plots Gallery */
+        .plots-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1rem;
+            margin-top: 0.75rem;
+        }
+
+        .plot-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+            cursor: pointer;
+        }
+
+        .plot-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+        }
+
+        .plot-card img {
             width: 100%;
-            height: 36px;
-            outline: none;
-            filter: invert(0.9) hue-rotate(180deg);
+            height: 200px;
+            object-fit: cover;
+            display: block;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .plot-card-info {
+            padding: 0.75rem 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .plot-card-name {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: 'Outfit', monospace;
+        }
+
+        .plot-card-size {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        /* Turn plots inline preview */
+        .turn-plots-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .turn-plot-img {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            transition: transform 0.2s ease;
+            cursor: pointer;
+        }
+
+        .turn-plot-img:hover {
+            transform: scale(1.02);
+        }
+
+        /* Plot modal overlay */
+        .plot-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            cursor: zoom-out;
+        }
+
+        .plot-modal.active {
+            display: flex;
+        }
+
+        .plot-modal img {
+            max-width: 92vw;
+            max-height: 90vh;
+            border-radius: 12px;
+            box-shadow: 0 0 60px rgba(59, 130, 246, 0.15);
         }
 
         /* Table */
@@ -553,6 +644,26 @@
                 </div>
             </div>
 
+            <!-- Turn-specific saved plots preview -->
+            <div id="turn-plots-section" style="margin-top: 1.25rem; display: none;">
+                <div class="chart-header-row">
+                    <div class="chart-title">📊 Saved Analysis Plots (This Turn)</div>
+                    <span class="badge badge-accent">PNG — saved to plots/</span>
+                </div>
+                <div id="turn-plots-row" class="turn-plots-row"></div>
+            </div>
+
+            <!-- Saved Plots Gallery -->
+            <div class="history-box" style="margin-top: 1.25rem;">
+                <div class="chart-header-row">
+                    <div class="chart-title">🖼️ All Saved Plots Gallery</div>
+                    <button onclick="refreshPlotGallery()" style="background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 0.35rem 0.75rem; cursor: pointer; font-size: 0.8rem;">↻ Refresh</button>
+                </div>
+                <div id="plots-gallery" class="plots-gallery" style="margin-top: 0.5rem;">
+                    <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1 / -1;">No plots saved yet — process audio to generate DSP analysis plots</div>
+                </div>
+            </div>
+
             <!-- History log -->
             <div class="history-box" style="margin-top: 1rem;">
                 <div class="chart-title">Assistant Turn History</div>
@@ -584,6 +695,10 @@
                 Speak into your microphone, drop in an audio recording, or choose one of our preset test cases in the sidebar to visualize the live 8-stage DSP pipeline in real-time.
             </div>
         </div>
+    <!-- Full-screen plot modal -->
+    <div id="plot-modal" class="plot-modal" onclick="this.classList.remove('active')">
+        <img id="plot-modal-img" src="" alt="Full-size plot">
+    </div>
     </main>
 
     <script>
@@ -595,6 +710,7 @@
         window.addEventListener('DOMContentLoaded', () => {
             fetchTestFiles();
             refreshState();
+            refreshPlotGallery();
         });
 
         // ── API Service Functions ─────────────────────────────────────
@@ -677,8 +793,14 @@
                         showStatus("🔬 Processing voice turn...");
                         
                         const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/wav' });
+                        // Derive correct file extension from actual MIME type
+                        const mimeType = mediaRecorder.mimeType || 'audio/wav';
+                        let ext = '.wav';
+                        if (mimeType.includes('webm')) ext = '.webm';
+                        else if (mimeType.includes('ogg'))  ext = '.ogg';
+                        else if (mimeType.includes('mp4'))  ext = '.mp4';
                         const formData = new FormData();
-                        formData.append('file', audioBlob, 'recording.wav');
+                        formData.append('file', audioBlob, 'recording' + ext);
 
                         try {
                             const res = await fetch('/api/process', {
@@ -808,6 +930,10 @@
             drawWaveformChart(state.waveform);
             drawFFTChart(state.fft);
             drawSHAPChart(state.freq_importance);
+
+            // Show turn-specific saved plot images
+            renderTurnPlots(state.plot_urls);
+            refreshPlotGallery();
         }
 
         function renderHistoryTable(history) {
@@ -909,6 +1035,72 @@
                 yaxis: { showgrid: true, gridcolor: '#1e1e26', color: '#52525b', title: 'SHAP Value' }
             };
             Plotly.newPlot('shap-chart', [trace], layout, { displayModeBar: false, responsive: true });
+        }
+
+        // ── Saved Plots Gallery ──────────────────────────────────────
+        function openPlotModal(url) {
+            document.getElementById('plot-modal-img').src = url;
+            document.getElementById('plot-modal').classList.add('active');
+        }
+
+        function renderTurnPlots(plotUrls) {
+            const section = document.getElementById('turn-plots-section');
+            const row = document.getElementById('turn-plots-row');
+            if (!plotUrls || Object.keys(plotUrls).length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = 'block';
+            row.innerHTML = '';
+            const labels = {
+                waveform_plot: '🌊 Waveform',
+                fft_plot: '📈 FFT Spectrum',
+                shap_plot: '🎯 SHAP Importance',
+                combined_plot: '📋 Combined Analysis'
+            };
+            Object.entries(plotUrls).forEach(([key, url]) => {
+                const div = document.createElement('div');
+                div.style.textAlign = 'center';
+                const label = document.createElement('div');
+                label.style.cssText = 'font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;';
+                label.textContent = labels[key] || key;
+                const img = document.createElement('img');
+                img.src = url + '?t=' + Date.now();
+                img.alt = key;
+                img.className = 'turn-plot-img';
+                img.onclick = () => openPlotModal(img.src);
+                div.appendChild(label);
+                div.appendChild(img);
+                row.appendChild(div);
+            });
+        }
+
+        async function refreshPlotGallery() {
+            try {
+                const res = await fetch('/api/plots');
+                const plots = await res.json();
+                const gallery = document.getElementById('plots-gallery');
+                if (!plots || plots.length === 0) {
+                    gallery.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1 / -1;">No plots saved yet — process audio to generate DSP analysis plots</div>';
+                    return;
+                }
+                gallery.innerHTML = '';
+                plots.forEach(plot => {
+                    const card = document.createElement('div');
+                    card.className = 'plot-card';
+                    card.onclick = () => openPlotModal(plot.url);
+                    card.innerHTML = `
+                        <img src="${plot.url}?t=${Date.now()}" alt="${plot.name}" loading="lazy">
+                        <div class="plot-card-info">
+                            <span class="plot-card-name">${plot.name}</span>
+                            <span class="plot-card-size">${plot.size_kb} KB</span>
+                        </div>
+                    `;
+                    gallery.appendChild(card);
+                });
+            } catch (err) {
+                console.error('Failed to load plots gallery:', err);
+            }
         }
     </script>
 </body>

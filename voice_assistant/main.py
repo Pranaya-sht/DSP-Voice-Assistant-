@@ -551,39 +551,55 @@ def run_adaptive_pipeline(
 
 def load_audio_file(file_path_str: str) -> "tuple[np.ndarray, int]":
     """
-    Load an audio file (WAV, MP3, etc.) and return (audio_data, sample_rate).
-    If it's MP3/other, uses pydub. If WAV, uses scipy.io.wavfile.
-    Returns mono float32 or int16 numpy array.
+    Load an audio file and return (audio_data, sample_rate).
+
+    Uses pydub (ffmpeg) as the primary decoder — it handles WAV, WebM,
+    OGG, MP3, M4A, FLAC, and any other format ffmpeg supports.
+    Falls back to scipy.io.wavfile only for .wav files when pydub fails.
+
+    Returns mono int16 numpy array.
     """
     import numpy as np
     from pathlib import Path
-    
+
     file_path = Path(file_path_str.strip('"\''))
     ext = file_path.suffix.lower()
-    
-    if ext == ".wav":
-        import scipy.io.wavfile as wav
-        sr, data = wav.read(str(file_path))
-        # If stereo, take channel 0
-        if len(data.shape) > 1:
-            data = data[:, 0]
-        return data, sr
-    else:
-        # Try loading with pydub (handles mp3, m4a, etc.)
+
+    # ── Primary path: pydub + ffmpeg (handles every format) ────────────
+    _pydub_err = None
+    try:
         from pydub import AudioSegment
         audio = AudioSegment.from_file(str(file_path))
-        # Convert to mono
-        audio = audio.set_channels(1)
+        # Normalise to mono, 16-bit, native sample rate
+        audio = audio.set_channels(1).set_sample_width(2)
         sr = audio.frame_rate
-        
-        # Get raw data as numpy array
-        if audio.sample_width == 2:
-            data = np.frombuffer(audio.raw_data, dtype=np.int16)
-        elif audio.sample_width == 4:
-            data = np.frombuffer(audio.raw_data, dtype=np.int32)
-        else:
-            data = np.frombuffer(audio.raw_data, dtype=np.uint8)
+        data = np.frombuffer(audio.raw_data, dtype=np.int16)
+        print(f"[Audio] Loaded via pydub: {file_path.name}  "
+              f"({sr} Hz, {len(data)/sr:.2f}s, {ext})")
         return data, sr
+    except Exception as e:
+        _pydub_err = e
+        print(f"[Audio] pydub failed for {file_path.name}: {e}")
+
+    # ── Fallback: scipy (only works for standard RIFF WAV) ─────────────
+    if ext == ".wav":
+        try:
+            import scipy.io.wavfile as wav
+            sr, data = wav.read(str(file_path))
+            if len(data.shape) > 1:
+                data = data[:, 0]
+            print(f"[Audio] Loaded via scipy: {file_path.name}  ({sr} Hz)")
+            return data, sr
+        except Exception as scipy_err:
+            raise RuntimeError(
+                f"Cannot read '{file_path.name}': pydub error: {_pydub_err}; "
+                f"scipy error: {scipy_err}"
+            ) from scipy_err
+
+    raise RuntimeError(
+        f"Cannot read '{file_path.name}' ({ext}): pydub/ffmpeg failed and "
+        f"scipy only supports .wav.  Original error: {_pydub_err}"
+    )
 
 
 def main(args: argparse.Namespace) -> None:
