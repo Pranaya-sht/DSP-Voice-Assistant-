@@ -655,7 +655,7 @@ def main():
         # ── Sidebar interaction panel ─────────────────────────────
         st.sidebar.markdown("### 🎙️ Audio Input Controls")
         
-        input_type = st.sidebar.selectbox("Select Audio Input", ["Browser Microphone", "File Upload (WAV/MP3)"])
+        input_type = st.sidebar.selectbox("Select Audio Input", ["Browser Microphone", "File Upload (WAV/MP3)", "Quick-Load Test Audio File"])
         
         raw_audio = None
         sr = 44100
@@ -676,7 +676,7 @@ def main():
                             raw_audio = raw_audio[:, 0]
                     except Exception as e:
                         st.sidebar.error(f"Failed to read mic audio: {e}")
-        else:
+        elif input_type == "File Upload (WAV/MP3)":
             uploaded_file = st.sidebar.file_uploader("Upload WAV/MP3 file", type=["wav", "mp3"])
             if uploaded_file is not None:
                 audio_bytes = uploaded_file.getvalue()
@@ -696,6 +696,23 @@ def main():
                         if os.path.exists(temp_upload_path):
                             try: os.remove(temp_upload_path)
                             except: pass
+        else:
+            test_dir = Path("test")
+            if test_dir.exists() and test_dir.is_dir():
+                test_files = [f.name for f in test_dir.glob("*.wav")] + [f.name for f in test_dir.glob("*.mp3")]
+                test_files.sort()
+                selected_test_file = st.sidebar.selectbox("Select Test File", test_files)
+                if st.sidebar.button("Run DSP Pipeline on Test File"):
+                    test_file_path = test_dir / selected_test_file
+                    from main import load_audio_file
+                    try:
+                        raw_audio, sr = load_audio_file(str(test_file_path))
+                        # Use a timestamp-based hash so they can run the same file multiple times
+                        audio_hash = hash(str(test_file_path) + str(time.time()))
+                    except Exception as e:
+                        st.sidebar.error(f"Failed to load test file: {e}")
+            else:
+                st.sidebar.error("Test directory 'test/' not found.")
                             
         # If new audio detected, process it
         if raw_audio is not None and audio_hash is not None:
