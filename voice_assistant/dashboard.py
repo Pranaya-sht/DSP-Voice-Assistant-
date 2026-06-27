@@ -384,11 +384,11 @@ def process_interactive_audio(audio_data: np.ndarray, sample_rate: int) -> None:
         },
         "features": {
             "snr_db": float(feature_summary["snr_db"]),
-            "noise_level_db": float(feature_summary["noise_level_db"]),
-            "spectral_centroid_hz": float(feature_summary["spectral_centroid_hz"]),
+            "noise_level_db": float(feature_summary["noise_level"]),
+            "spectral_centroid_hz": float(feature_summary["spectral_centroid"]),
             "zero_crossing_rate": float(feature_summary["zero_crossing_rate"]),
-            "bandwidth_hz": float(feature_summary["bandwidth_hz"]),
-            "dominant_freq_hz": float(feature_summary["dominant_freq_hz"])
+            "bandwidth_hz": float(feature_summary["bandwidth"]),
+            "dominant_freq_hz": float(feature_summary["dominant_frequency"])
         },
         "cnn14": [{"label": p["label"], "probability": float(p["probability"])} for p in cnn14_preds[:3]],
         "freq_importance": {
