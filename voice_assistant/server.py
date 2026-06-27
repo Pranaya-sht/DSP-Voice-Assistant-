@@ -144,12 +144,16 @@ async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
         ai_response = "I couldn't hear or understand anything. Could you please speak again?"
     else:
         # 8. Query AI (Gemini)
-        ai_response = query_ai(
-            user_text=user_text,
-            history=history,
-            backend="gemini",
-            max_tokens=1024
-        )
+        try:
+            ai_response = query_ai(
+                user_text=user_text,
+                history=history,
+                backend="gemini",
+                max_tokens=1024
+            )
+        except Exception as api_err:
+            print(f"[Server] ⚠️ Gemini API Query failed: {api_err}")
+            ai_response = f"[API Error / Rate Limit Exceeded] I processed your speech: '{user_text}', but my AI brain was unable to answer because of a Gemini API quota limit. Please check your Gemini key or try again in a few minutes!"
         
     # 9. Speak TTS response (Async edge_tts communicate)
     clean_text = clean_text_for_speech(ai_response)
