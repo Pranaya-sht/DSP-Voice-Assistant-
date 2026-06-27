@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎙️ DSP Voice Assistant — Workspace</title>
+    <meta name="description" content="Real-time web application visualizing DSP acoustic feature selection and neural voice responses.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
+    <!-- Plotly.js for interactive charts -->
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    
+    <style>
+        /* Modern Design System - Dark Zinc & Glassmorphism */
+        :root {
+            --bg: #09090b;
+            --bg-subtle: #0d0d11;
+            --card: #0d0d11;
+            --card-hover: #13131a;
+            --border: #1e1e26;
+            --border-subtle: #16161f;
+            --text: #fafafa;
+            --text-muted: #71717a;
+            --text-dim: #52525b;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --accent: #8b5cf6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar styling */
+        aside {
+            width: 320px;
+            background-color: var(--bg-subtle);
+            border-right: 1px solid var(--border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 1rem;
+        }
+
+        .brand span {
+            color: var(--primary);
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .ctrl-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        button {
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.9rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: #white;
+            color: #ffffff;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background-color: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background-color: transparent;
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background-color: rgba(239, 68, 68, 0.1);
+        }
+
+        .btn-secondary {
+            background-color: #1e293b;
+            color: var(--text);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #334155;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        select, input[type="file"] {
+            width: 100%;
+            background-color: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.65rem 0.75rem;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        select:focus {
+            border-color: var(--primary);
+        }
+
+        /* Main Content Container */
+        main {
+            flex-grow: 1;
+            padding: 2rem 2.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            overflow-y: auto;
+        }
+
+        /* Status Banner */
+        .status-banner {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.95rem;
+        }
+
+        .status-text {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 500;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Grid metrics cards */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 1rem;
+        }
+
+        @media (max-width: 1100px) {
+            .metrics-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .metrics-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .metric-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            transition: border-color 0.2s ease;
+        }
+
+        .metric-card:hover {
+            border-color: var(--border-subtle);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        /* Interactive conversation output */
+        .chat-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+        }
+
+        @media (max-width: 900px) {
+            .chat-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .chat-header {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .chat-content {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: var(--text);
+            min-height: 80px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .audio-playback {
+            margin-top: auto;
+            width: 100%;
+        }
+
+        /* Charts Row */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 1.25rem;
+        }
+
+        @media (max-width: 1000px) {
+            .charts-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-box {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            min-height: 380px;
+        }
+
+        .chart-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .chart-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .chart-container-inner {
+            flex-grow: 1;
+            width: 100%;
+            height: 320px;
+        }
+
+        /* Audio feedback visual styling */
+        audio {
+            width: 100%;
+            height: 36px;
+            outline: none;
+            filter: invert(0.9) hue-rotate(180deg);
+        }
+
+        /* Table */
+        .history-box {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        th {
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+        }
+
+        tr:hover td {
+            background-color: rgba(255,255,255,0.01);
+        }
+
+        /* Welcome overlays */
+        .welcome-overlay {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem 2rem;
+            text-align: center;
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.01);
+        }
+
+        .welcome-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-subtitle {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            max-width: 450px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-accent {
+            background-color: rgba(139, 92, 246, 0.15);
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar controls -->
+    <aside>
+        <div class="brand">
+            🎙️ <span>DSP</span> Assistant
+        </div>
+
+        <div class="section-title">Microphone Input</div>
+        <div class="ctrl-card">
+            <button id="mic-btn" class="btn-primary" onclick="toggleMic()">
+                🎤 Start Recording
+            </button>
+            <div id="mic-status" style="font-size: 0.8rem; text-align: center; color: var(--text-muted);">
+                Ready to capture
+            </div>
+        </div>
+
+        <div class="section-title">File Upload</div>
+        <div class="ctrl-card">
+            <input type="file" id="file-uploader" accept=".wav,.mp3" onchange="uploadFile(this)">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center;">
+                Supported: WAV, MP3
+            </div>
+        </div>
+
+        <div class="section-title">Test Suite Quick-Load</div>
+        <div class="ctrl-card">
+            <select id="test-selector">
+                <option value="">-- Select Test File --</option>
+            </select>
+            <button id="run-test-btn" class="btn-secondary" onclick="runTestFile()" disabled>
+                🚀 Run on Test File
+            </button>
+        </div>
+
+        <div style="margin-top: auto;">
+            <button class="btn-danger" onclick="clearWorkspace()">
+                🗑️ Clear Workspace
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main>
+        <!-- Status Notification Banner -->
+        <div class="status-banner" id="status-banner" style="display: none;">
+            <div class="status-text">
+                <div class="spinner"></div>
+                <span id="status-msg">🔬 Running voice pipeline...</span>
+            </div>
+        </div>
+
+        <div id="dashboard-content" style="display: none;">
+            <!-- Metrics Bar -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Filter</div>
+                    <div class="metric-value" id="val-filter">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">FFT Size</div>
+                    <div class="metric-value" id="val-fft">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Estimated SNR</div>
+                    <div class="metric-value" id="val-snr">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Noise Level</div>
+                    <div class="metric-value" id="val-noise">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">ZCR</div>
+                    <div class="metric-value" id="val-zcr">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Dominant Freq</div>
+                    <div class="metric-value" id="val-dom-freq">--</div>
+                </div>
+            </div>
+
+            <!-- Conversation/Response Row -->
+            <div class="chat-container">
+                <div class="chat-card">
+                    <div class="chat-header">👤 User Speech Transcript</div>
+                    <div class="chat-content" id="txt-transcript">--</div>
+                </div>
+                <div class="chat-card">
+                    <div class="chat-header">🤖 Assistant Voice Response</div>
+                    <div class="chat-content" id="txt-response">--</div>
+                    <audio id="tts-audio-player" class="audio-playback" controls></audio>
+                </div>
+            </div>
+
+            <!-- Plots section -->
+            <div class="charts-row">
+                <div class="chart-box">
+                    <div class="chart-header-row">
+                        <div class="chart-title">Waveform Comparison</div>
+                        <span class="badge badge-accent">Raw vs Filtered</span>
+                    </div>
+                    <div id="waveform-chart" class="chart-container-inner"></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-header-row">
+                        <div class="chart-title">FFT Spectrum Amplitude</div>
+                        <span class="badge badge-accent">Up to 8 kHz</span>
+                    </div>
+                    <div id="fft-chart" class="chart-container-inner"></div>
+                </div>
+            </div>
+
+            <div class="charts-row" style="margin-top: 1rem;">
+                <div class="chart-box" style="grid-column: span 2;">
+                    <div class="chart-header-row">
+                        <div class="chart-title">SHAP Frequency Importance</div>
+                        <span class="badge badge-accent">Contribution per Band</span>
+                    </div>
+                    <div id="shap-chart" class="chart-container-inner"></div>
+                </div>
+            </div>
+
+            <!-- History log -->
+            <div class="history-box" style="margin-top: 1rem;">
+                <div class="chart-title">Assistant Turn History</div>
+                <div style="overflow-x: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Turn</th>
+                                <th>Timestamp</th>
+                                <th>Active Filter</th>
+                                <th>FFT Size</th>
+                                <th>SNR (dB)</th>
+                                <th>Noise (dB)</th>
+                                <th>Transcript</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Welcome Overlay -->
+        <div id="welcome-overlay" class="welcome-overlay">
+            <div class="welcome-title">Welcome to DSP Voice Assistant</div>
+            <div class="welcome-subtitle">
+                Speak into your microphone, drop in an audio recording, or choose one of our preset test cases in the sidebar to visualize the live 8-stage DSP pipeline in real-time.
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+
+        // Auto-run on start to load state and dropdown options
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchTestFiles();
+            refreshState();
+        });
+
+        // ── API Service Functions ─────────────────────────────────────
+        async function fetchTestFiles() {
+            try {
+                const res = await fetch('/api/test-files');
+                const files = await res.json();
+                const selector = document.getElementById('test-selector');
+                
+                // Clear and add placeholder
+                selector.innerHTML = '<option value="">-- Select Test File --</option>';
+                
+                files.forEach(file => {
+                    const opt = document.createElement('option');
+                    opt.value = file;
+                    opt.textContent = file;
+                    selector.appendChild(opt);
+                });
+
+                selector.addEventListener('change', () => {
+                    document.getElementById('run-test-btn').disabled = !selector.value;
+                });
+            } catch (err) {
+                console.error("Failed to load test files", err);
+            }
+        }
+
+        async function refreshState() {
+            try {
+                const res = await fetch('/api/state');
+                const state = await res.json();
+                
+                if (state && state.turn) {
+                    renderDashboard(state);
+                } else {
+                    document.getElementById('dashboard-content').style.display = 'none';
+                    document.getElementById('welcome-overlay').style.display = 'flex';
+                }
+                
+                // Refresh table history
+                const histRes = await fetch('/api/history');
+                const history = await histRes.json();
+                renderHistoryTable(history);
+            } catch (err) {
+                console.error("Error refreshing state", err);
+            }
+        }
+
+        function showStatus(msg) {
+            document.getElementById('status-msg').innerText = msg;
+            document.getElementById('status-banner').style.display = 'flex';
+        }
+
+        function hideStatus() {
+            document.getElementById('status-banner').style.display = 'none';
+        }
+
+        // ── Microphone Recording Flow ────────────────────────────────
+        async function toggleMic() {
+            const btn = document.getElementById('mic-btn');
+            const status = document.getElementById('mic-status');
+
+            if (!isRecording) {
+                // Start
+                try {
+                    audioChunks = [];
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    let options = { mimeType: 'audio/webm' };
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) options = { mimeType: 'audio/ogg' };
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) options = {}; // Fallback
+
+                    mediaRecorder = new MediaRecorder(stream, options);
+                    mediaRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) audioChunks.push(e.data);
+                    };
+                    
+                    mediaRecorder.onstop = async () => {
+                        status.textContent = "Processing recording...";
+                        showStatus("🔬 Processing voice turn...");
+                        
+                        const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/wav' });
+                        const formData = new FormData();
+                        formData.append('file', audioBlob, 'recording.wav');
+
+                        try {
+                            const res = await fetch('/api/process', {
+                                method: 'POST',
+                                body: formData
+                            });
+                            const state = await res.json();
+                            renderDashboard(state);
+                            await refreshState();
+                        } catch (err) {
+                            alert("Failed to process microphone audio: " + err);
+                        } finally {
+                            hideStatus();
+                            status.textContent = "Ready to capture";
+                        }
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+                    btn.innerHTML = "🛑 Stop Recording";
+                    btn.style.backgroundColor = "var(--danger)";
+                    status.textContent = "Recording... Speak now";
+                } catch (err) {
+                    alert("Camera/Microphone permission denied: " + err);
+                }
+            } else {
+                // Stop
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.innerHTML = "🎤 Start Recording";
+                btn.style.backgroundColor = "var(--primary)";
+            }
+        }
+
+        // ── File Upload Flow ──────────────────────────────────────────
+        async function uploadFile(input) {
+            if (!input.files || input.files.length === 0) return;
+            const file = input.files[0];
+            showStatus("🔬 Extracting acoustics from " + file.name + "...");
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                const state = await res.json();
+                renderDashboard(state);
+                await refreshState();
+            } catch (err) {
+                alert("Failed to upload file: " + err);
+            } finally {
+                hideStatus();
+                input.value = ''; // Reset input
+            }
+        }
+
+        // ── Test File Pipeline Flow ──────────────────────────────────
+        async function runTestFile() {
+            const selector = document.getElementById('test-selector');
+            const filename = selector.value;
+            if (!filename) return;
+
+            showStatus("🔬 Loading & processing test file: " + filename + "...");
+            const formData = new FormData();
+            formData.append('filename', filename);
+
+            try {
+                const res = await fetch('/api/run-test', {
+                    method: 'POST',
+                    body: formData
+                });
+                const state = await res.json();
+                renderDashboard(state);
+                await refreshState();
+            } catch (err) {
+                alert("Error running test suite: " + err);
+            } finally {
+                hideStatus();
+            }
+        }
+
+        // ── Clear Conversation Flow ──────────────────────────────────
+        async function clearWorkspace() {
+            if (!confirm("Are you sure you want to reset conversation history and clear logs?")) return;
+            showStatus("🗑️ Clearing workspace...");
+            try {
+                await fetch('/api/clear', { method: 'POST' });
+                await refreshState();
+            } catch (err) {
+                alert("Error clearing workspace: " + err);
+            } finally {
+                hideStatus();
+            }
+        }
+
+        // ── Visualizations / Rendering ──────────────────────────────
+        function renderDashboard(state) {
+            document.getElementById('welcome-overlay').style.display = 'none';
+            document.getElementById('dashboard-content').style.display = 'block';
+
+            // Top metrics
+            document.getElementById('val-filter').innerText = (state.pipeline.filter || "none").toUpperCase();
+            document.getElementById('val-fft').innerText = state.pipeline.fft_size || "--";
+            document.getElementById('val-snr').innerText = (state.features.snr_db).toFixed(2) + " dB";
+            document.getElementById('val-noise').innerText = (state.features.noise_level_db).toFixed(2) + " dB";
+            document.getElementById('val-zcr').innerText = (state.features.zero_crossing_rate).toFixed(4);
+            document.getElementById('val-dom-freq').innerText = (state.features.dominant_freq_hz).toFixed(1) + " Hz";
+
+            // Transcripts
+            document.getElementById('txt-transcript').innerText = state.transcript || "[No Speech Detected]";
+            document.getElementById('txt-response').innerText = state.ai_response || "[No Response]";
+
+            // TTS player
+            const player = document.getElementById('tts-audio-player');
+            if (state.tts_audio_url) {
+                player.src = state.tts_audio_url;
+                player.style.display = 'block';
+                player.play().catch(e => console.log("Auto-play blocked by browser. Play manually."));
+            } else {
+                player.style.display = 'none';
+            }
+
+            // Draw charts
+            drawWaveformChart(state.waveform);
+            drawFFTChart(state.fft);
+            drawSHAPChart(state.freq_importance);
+        }
+
+        function renderHistoryTable(history) {
+            const tbody = document.getElementById('history-table-body');
+            tbody.innerHTML = '';
+            
+            if (!history || history.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No turns processed yet</td></tr>';
+                return;
+            }
+
+            history.forEach(turn => {
+                const tr = document.createElement('tr');
+                const timeStr = new Date(turn.timestamp * 1000).toLocaleTimeString();
+                
+                tr.innerHTML = `
+                    <td><strong>#${turn.turn}</strong></td>
+                    <td>${timeStr}</td>
+                    <td><span class="badge" style="background-color: rgba(255,255,255,0.05); color: #fafafa;">${turn.filter.toUpperCase()}</span></td>
+                    <td>${turn.fft_size}</td>
+                    <td>${turn.snr_db.toFixed(1)} dB</td>
+                    <td>${turn.noise_level_db.toFixed(1)} dB</td>
+                    <td style="color: var(--text-muted); font-size: 0.8rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${turn.transcript}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Plotly Draw Functions
+        function drawWaveformChart(wf) {
+            const rawTrace = {
+                y: wf.raw,
+                mode: 'lines',
+                name: 'Raw Signal',
+                line: { color: '#71717a', width: 1.5 }
+            };
+            const filtTrace = {
+                y: wf.filtered,
+                mode: 'lines',
+                name: 'Filtered Signal',
+                line: { color: '#3b82f6', width: 1.5 }
+            };
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { l: 40, r: 10, t: 10, b: 30 },
+                xaxis: { showgrid: false, color: '#52525b', title: 'Samples' },
+                yaxis: { showgrid: true, gridcolor: '#1e1e26', color: '#52525b' },
+                legend: { font: { color: '#fafafa' }, orientation: 'h', y: 1.15 }
+            };
+            Plotly.newPlot('waveform-chart', [rawTrace, filtTrace], layout, { displayModeBar: false, responsive: true });
+        }
+
+        function drawFFTChart(fft) {
+            const rawTrace = {
+                x: fft.frequencies,
+                y: fft.raw_magnitude,
+                mode: 'lines',
+                name: 'Raw FFT',
+                line: { color: '#ef4444', width: 1.5 }
+            };
+            const filtTrace = {
+                x: fft.frequencies,
+                y: fft.filtered_magnitude,
+                mode: 'lines',
+                name: 'Filtered FFT',
+                line: { color: '#10b981', width: 1.5 }
+            };
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { l: 40, r: 10, t: 10, b: 30 },
+                xaxis: { showgrid: false, color: '#52525b', title: 'Frequency (Hz)' },
+                yaxis: { showgrid: true, gridcolor: '#1e1e26', color: '#52525b' },
+                legend: { font: { color: '#fafafa' }, orientation: 'h', y: 1.15 }
+            };
+            Plotly.newPlot('fft-chart', [rawTrace, filtTrace], layout, { displayModeBar: false, responsive: true });
+        }
+
+        function drawSHAPChart(shap) {
+            if (!shap || !shap.frequencies || shap.frequencies.length === 0) {
+                document.getElementById('shap-chart').innerHTML = '<div style="text-align: center; color: var(--text-muted); line-height: 300px;">No SHAP explanation data available for this turn</div>';
+                return;
+            }
+
+            const trace = {
+                x: shap.frequencies,
+                y: shap.importance,
+                type: 'bar',
+                marker: {
+                    color: shap.importance.map(v => v >= 0 ? '#10b981' : '#ef4444')
+                }
+            };
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                margin: { l: 40, r: 10, t: 10, b: 30 },
+                xaxis: { showgrid: false, color: '#52525b', title: 'Frequency (Hz)' },
+                yaxis: { showgrid: true, gridcolor: '#1e1e26', color: '#52525b', title: 'SHAP Value' }
+            };
+            Plotly.newPlot('shap-chart', [trace], layout, { displayModeBar: false, responsive: true });
+        }
+    </script>
+</body>
+</html>
