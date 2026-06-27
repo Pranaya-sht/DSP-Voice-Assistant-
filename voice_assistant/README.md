@@ -18,6 +18,38 @@ A real-time Python voice chatbot with DSP visualization.
 | 🔔 Wake Word | Optional "Hello Assistant" trigger |
 | 🔇 Noise Estimation | Background noise floor calibration |
 
+
+---
+
+## 🔄 AI-Adaptive DSP & Voice Assistant Pipeline
+
+The assistant processes audio signals through a custom 8-stage intelligent pipeline, adjusting acoustic filters before querying the language model:
+
+```mermaid
+graph TD
+    A[1. Audio Input: Mic / File] --> B[2. Preprocessing: Norm & Frame]
+    B --> C[3. Feature Summary: SNR, ZCR, Freq]
+    C --> D[4. AI Decision Engine: Random Forest]
+    D -->|Predicted Filter/FFT| E[5. Adaptive DSP: Butterworth / Wiener / Notch]
+    E --> F[6. Context Classifier: CNN14 AudioSet]
+    E --> G[7. Explainability: SHAP Importance]
+    E --> H[8. Speech-to-Text: Whisper STT]
+    H --> I[9. AI Engine: Google Gemini / OpenAI]
+    I --> J[10. Text-to-Speech: Neural Edge-TTS]
+```
+
+### Detailed Pipeline Stages
+1. **Audio Input**: Live browser microphone recording (`MediaRecorder`) or uploaded `.wav`/`.mp3` files.
+2. **Preprocessing**: Normalizes peak amplitude, centers offset (DC removal), and splits signals into overlapping windows.
+3. **Feature Summary**: Computes Signal-to-Noise Ratio (SNR), background noise floor, zero-crossing rate, dominant frequencies, spectral centroid, and bandwidth.
+4. **AI Decision Engine**: A Random Forest model trained on noise profiles (or hardcoded rules for silences/hum) selects the optimal filter and FFT size.
+5. **Adaptive DSP**: Dynamically applies Butterworth (lowpass, highpass, bandpass), Notch (electrical hum suppression), or Wiener filters.
+6. **Context Classification**: Classifies background sounds (like Speech, Animals, or Crowds) using a pretrained CNN14 model.
+7. **Explainability (SHAP)**: Back-propagates feature contributions to explain why a specific filter or parameter set was selected.
+8. **Speech-to-Text**: Feeds clean, noise-filtered audio into Faster-Whisper to generate an accurate text transcription.
+9. **AI Language Model**: Queries Gemini or GPT with the user's request and conversation context.
+10. **Text-to-Speech**: Generates response voice using neural synthesized speech (`edge-tts`).
+
 ---
 
 ## 📁 Project Structure
