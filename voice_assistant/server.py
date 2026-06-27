@@ -79,7 +79,43 @@ def startup_event():
             pass
 
 # ── Plot Generation Helper ────────────────────────────────────
-def generate_turn_plots(turn: int, state: dict) -> dict:
+PLOT_KEY_BY_SUFFIX = {
+    "waveform": "waveform_plot",
+    "fft_spectrum": "fft_plot",
+    "shap": "shap_plot",
+    "analysis": "combined_plot",
+    "xai": "xai_plot",
+}
+
+def get_plot_urls_for_turn(turn: int) -> dict:
+    """Reconstruct plot URL map from PNG files saved for a specific turn."""
+    prefix = f"turn_{turn:03d}_"
+    plot_urls = {}
+    if not PLOTS_DIR.exists():
+        return plot_urls
+    for plot_file in sorted(PLOTS_DIR.glob(f"{prefix}*.png")):
+        suffix = plot_file.stem[len(prefix):]
+        key = PLOT_KEY_BY_SUFFIX.get(suffix, suffix)
+        plot_urls[key] = f"/plots/{plot_file.name}"
+    return plot_urls
+
+def persist_turn_state(state: dict) -> None:
+    """Write the enriched turn state (including plot_urls) back to disk."""
+    state_file = DASHBOARD_STATE_DIR / "latest_turn.json"
+    tmp = state_file.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        json.dump(state, f)
+    if state_file.exists():
+        state_file.unlink()
+    tmp.rename(state_file)
+
+def generate_turn_plots(
+    turn: int,
+    state: dict,
+    dsp_engine=None,
+    dsp_params: dict | None = None,
+    cnn14_preds: list | None = None,
+) -> dict:
     """Generate publication-quality matplotlib PNG plots and save to plots/ directory.
     Returns dict of plot URLs for the frontend."""
     import matplotlib
@@ -234,6 +270,25 @@ def generate_turn_plots(turn: int, state: dict) -> dict:
     except Exception as e:
         print(f'[Plots] Combined plot error: {e}')
 
+    # ── 5. XAI Explainability Dashboard (RF + SHAP + CNN14 + DSP summary) ──
+    if dsp_engine is not None and dsp_params is not None:
+        try:
+            from explainability import plot_explainability_dashboard
+            rf_importance = dsp_engine.get_feature_importances()
+            fname = f'turn_{turn:03d}_xai.png'
+            plot_explainability_dashboard(
+                rf_importance=rf_importance,
+                freq_importance=state.get("freq_importance", {}),
+                cnn14_predictions=cnn14_preds or state.get("cnn14", []),
+                dsp_params=dsp_params,
+                save_path=str(PLOTS_DIR / fname),
+                interactive=False,
+            )
+            plot_urls["xai_plot"] = f"/plots/{fname}"
+            print(f"[Plots] Saved XAI dashboard: {fname}")
+        except Exception as e:
+            print(f"[Plots] XAI plot error: {e}")
+
     return plot_urls
 
 # ── Pipeline Runner Helper ────────────────────────────────────
@@ -358,11 +413,18 @@ async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
     
     # Generate and save matplotlib plots to plots/ directory
     try:
-        plot_urls = generate_turn_plots(turn, state)
+        plot_urls = generate_turn_plots(
+            turn,
+            state,
+            dsp_engine=dsp_engine,
+            dsp_params=dsp_params,
+            cnn14_preds=cnn14_preds,
+        )
         state["plot_urls"] = plot_urls
+        persist_turn_state(state)
     except Exception as e:
         print(f"[Plots] Error generating plots: {e}")
-        state["plot_urls"] = {}
+        state["plot_urls"] = get_plot_urls_for_turn(turn)
     
     return state
 
@@ -383,7 +445,10 @@ def get_latest_state():
     if not state_file.exists():
         return JSONResponse(content={})
     with open(state_file) as f:
-        return JSONResponse(content=json.load(f))
+        state = json.load(f)
+    if not state.get("plot_urls") and state.get("turn"):
+        state["plot_urls"] = get_plot_urls_for_turn(int(state["turn"]))
+    return JSONResponse(content=state)
 
 @app.get("/api/history")
 def get_history_log():
@@ -466,18 +531,23 @@ def clear_workspace():
     history_file = DASHBOARD_STATE_DIR / "turn_history.json"
     if history_file.exists():
         history_file.unlink()
+
+    if PLOTS_DIR.exists():
+        for plot_file in PLOTS_DIR.glob("*.png"):
+            plot_file.unlink()
         
     return JSONResponse(content={"status": "cleared"})
 
 @app.get("/api/plots")
-def list_plots():
-    """List all saved plot images in the plots/ directory."""
+def list_plots(turn: int | None = None):
+    """List saved plot images in plots/, optionally filtered to one turn."""
     if not PLOTS_DIR.exists():
         return JSONResponse(content=[])
+    pattern = f"turn_{turn:03d}_*.png" if turn is not None else "*.png"
     plots = sorted([
         {"name": f.name, "url": f"/plots/{f.name}", "size_kb": round(f.stat().st_size / 1024, 1)}
-        for f in PLOTS_DIR.glob("*.png")
-    ], key=lambda x: x["name"], reverse=True)
+        for f in PLOTS_DIR.glob(pattern)
+    ], key=lambda x: x["name"])
     return JSONResponse(content=plots)
 
 if __name__ == "__main__":

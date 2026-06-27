@@ -148,7 +148,8 @@ def plot_explainability_dashboard(
     freq_importance: dict,
     cnn14_predictions: list,
     dsp_params: dict,
-    save_path: str = None
+    save_path: str = None,
+    interactive: bool = True,
 ) -> None:
     """
     Create a stunning, premium dark-themed 4-panel matplotlib dashboard:
@@ -298,13 +299,17 @@ def plot_explainability_dashboard(
     )
     
     if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        save_dir = os.path.dirname(save_path)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
         fig.savefig(save_path, dpi=120, facecolor=fig.get_facecolor(), bbox_inches="tight")
         print(f"[DSP] Explainability dashboard saved to: '{save_path}'")
-        
-    # Redraw event loops
-    plt.pause(0.1)
-    plt.show(block=False)
+
+    if interactive:
+        plt.pause(0.1)
+        plt.show(block=False)
+    else:
+        plt.close(fig)
 
 if __name__ == "__main__":
     print("[Explainability] Running standalone test...")

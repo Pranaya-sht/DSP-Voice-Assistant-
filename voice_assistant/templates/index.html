@@ -421,6 +421,72 @@
             transform: scale(1.02);
         }
 
+        .cnn14-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            margin-top: 0.5rem;
+        }
+
+        .cnn14-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .cnn14-label-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .cnn14-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .cnn14-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--primary));
+            border-radius: 999px;
+        }
+
+        .pipeline-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+
+        .pipeline-detail {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 0.65rem 0.85rem;
+        }
+
+        .pipeline-detail-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-dim);
+        }
+
+        .pipeline-detail-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-top: 0.2rem;
+        }
+
+        .shap-top-bands {
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
         /* Plot modal overlay */
         .plot-modal {
             display: none;
@@ -578,6 +644,10 @@
             <!-- Metrics Bar -->
             <div class="metrics-grid">
                 <div class="metric-card">
+                    <div class="metric-label">Turn</div>
+                    <div class="metric-value" id="val-turn">--</div>
+                </div>
+                <div class="metric-card">
                     <div class="metric-label">Filter</div>
                     <div class="metric-value" id="val-filter">--</div>
                 </div>
@@ -597,9 +667,32 @@
                     <div class="metric-label">ZCR</div>
                     <div class="metric-value" id="val-zcr">--</div>
                 </div>
+            </div>
+
+            <div class="metrics-grid" style="margin-top: 1rem;">
                 <div class="metric-card">
                     <div class="metric-label">Dominant Freq</div>
                     <div class="metric-value" id="val-dom-freq">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Spectral Centroid</div>
+                    <div class="metric-value" id="val-centroid">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Bandwidth</div>
+                    <div class="metric-value" id="val-bandwidth">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Feature Set</div>
+                    <div class="metric-value" id="val-feature-set">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Decision Rule</div>
+                    <div class="metric-value" id="val-rule">--</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Pipeline Time</div>
+                    <div class="metric-value" id="val-elapsed">--</div>
                 </div>
             </div>
 
@@ -635,32 +728,40 @@
             </div>
 
             <div class="charts-row" style="margin-top: 1rem;">
-                <div class="chart-box" style="grid-column: span 2;">
+                <div class="chart-box">
+                    <div class="chart-header-row">
+                        <div class="chart-title">CNN14 Audio Classification</div>
+                        <span class="badge badge-accent">Environmental Context</span>
+                    </div>
+                    <div id="cnn14-panel" class="cnn14-list"></div>
+                </div>
+                <div class="chart-box">
                     <div class="chart-header-row">
                         <div class="chart-title">SHAP Frequency Importance</div>
                         <span class="badge badge-accent">Contribution per Band</span>
                     </div>
                     <div id="shap-chart" class="chart-container-inner"></div>
+                    <div id="shap-top-bands" class="shap-top-bands"></div>
                 </div>
             </div>
 
-            <!-- Turn-specific saved plots preview -->
+            <!-- Turn-specific saved plots from voice_assistant/plots -->
             <div id="turn-plots-section" style="margin-top: 1.25rem; display: none;">
                 <div class="chart-header-row">
-                    <div class="chart-title">📊 Saved Analysis Plots (This Turn)</div>
-                    <span class="badge badge-accent">PNG — saved to plots/</span>
+                    <div class="chart-title" id="turn-plots-title">DSP Analysis Plots</div>
+                    <span class="badge badge-accent">PNG — voice_assistant/plots/</span>
                 </div>
                 <div id="turn-plots-row" class="turn-plots-row"></div>
             </div>
 
-            <!-- Saved Plots Gallery -->
+            <!-- Saved Plots Gallery (current turn only) -->
             <div class="history-box" style="margin-top: 1.25rem;">
                 <div class="chart-header-row">
-                    <div class="chart-title">🖼️ All Saved Plots Gallery</div>
-                    <button onclick="refreshPlotGallery()" style="background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 0.35rem 0.75rem; cursor: pointer; font-size: 0.8rem;">↻ Refresh</button>
+                    <div class="chart-title" id="plots-gallery-title">Saved DSP Analysis Plots</div>
+                    <button onclick="refreshPlotGallery(currentTurn)" style="background: var(--primary); color: #fff; border: none; border-radius: 6px; padding: 0.35rem 0.75rem; cursor: pointer; font-size: 0.8rem;">↻ Refresh</button>
                 </div>
                 <div id="plots-gallery" class="plots-gallery" style="margin-top: 0.5rem;">
-                    <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1 / -1;">No plots saved yet — process audio to generate DSP analysis plots</div>
+                    <div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1 / -1;">Process audio to generate DSP analysis plots for this turn</div>
                 </div>
             </div>
 
@@ -705,12 +806,20 @@
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
+        let currentTurn = null;
+
+        const PLOT_LABELS = {
+            waveform_plot: 'Waveform Comparison',
+            fft_plot: 'FFT Spectrum',
+            shap_plot: 'SHAP Importance',
+            combined_plot: 'Combined Analysis',
+            xai_plot: 'XAI Explainability Dashboard',
+        };
 
         // Auto-run on start to load state and dropdown options
         window.addEventListener('DOMContentLoaded', () => {
             fetchTestFiles();
             refreshState();
-            refreshPlotGallery();
         });
 
         // ── API Service Functions ─────────────────────────────────────
@@ -907,13 +1016,21 @@
             document.getElementById('welcome-overlay').style.display = 'none';
             document.getElementById('dashboard-content').style.display = 'block';
 
+            currentTurn = state.turn || null;
+
             // Top metrics
+            document.getElementById('val-turn').innerText = state.turn ? `#${state.turn}` : '--';
             document.getElementById('val-filter').innerText = (state.pipeline.filter || "none").toUpperCase();
             document.getElementById('val-fft').innerText = state.pipeline.fft_size || "--";
             document.getElementById('val-snr').innerText = (state.features.snr_db).toFixed(2) + " dB";
             document.getElementById('val-noise').innerText = (state.features.noise_level_db).toFixed(2) + " dB";
             document.getElementById('val-zcr').innerText = (state.features.zero_crossing_rate).toFixed(4);
             document.getElementById('val-dom-freq').innerText = (state.features.dominant_freq_hz).toFixed(1) + " Hz";
+            document.getElementById('val-centroid').innerText = (state.features.spectral_centroid_hz || 0).toFixed(1) + " Hz";
+            document.getElementById('val-bandwidth').innerText = (state.features.bandwidth_hz || 0).toFixed(1) + " Hz";
+            document.getElementById('val-feature-set').innerText = (state.pipeline.feature_set || "—").toUpperCase();
+            document.getElementById('val-rule').innerText = (state.pipeline.rule || "random_forest").replace(/_/g, " ");
+            document.getElementById('val-elapsed').innerText = (state.pipeline.elapsed_ms || 0).toFixed(1) + " ms";
 
             // Transcripts
             document.getElementById('txt-transcript').innerText = state.transcript || "[No Speech Detected]";
@@ -933,10 +1050,41 @@
             drawWaveformChart(state.waveform);
             drawFFTChart(state.fft);
             drawSHAPChart(state.freq_importance);
+            renderCNN14Panel(state.cnn14);
+            renderShapTopBands(state.freq_importance);
 
-            // Show turn-specific saved plot images
-            renderTurnPlots(state.plot_urls);
-            refreshPlotGallery();
+            // Show turn-specific saved plot images from voice_assistant/plots
+            renderTurnPlots(state.plot_urls, state.turn);
+            refreshPlotGallery(state.turn);
+        }
+
+        function renderCNN14Panel(predictions) {
+            const panel = document.getElementById('cnn14-panel');
+            if (!predictions || predictions.length === 0) {
+                panel.innerHTML = '<div style="color: var(--text-muted); padding: 1rem 0;">No environmental classifications available for this turn.</div>';
+                return;
+            }
+            panel.innerHTML = predictions.map(pred => `
+                <div class="cnn14-item">
+                    <div class="cnn14-label-row">
+                        <span>${pred.label}</span>
+                        <span>${(pred.probability * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="cnn14-bar">
+                        <div class="cnn14-bar-fill" style="width: ${Math.max(pred.probability * 100, 2)}%;"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderShapTopBands(freqImportance) {
+            const el = document.getElementById('shap-top-bands');
+            const top = freqImportance?.top_frequencies || [];
+            if (!top.length) {
+                el.textContent = '';
+                return;
+            }
+            el.innerHTML = `Top frequency bands: ${top.slice(0, 3).map(t => `${t.freq.toFixed(0)} Hz`).join(', ')}`;
         }
 
         function renderHistoryTable(history) {
@@ -1046,27 +1194,23 @@
             document.getElementById('plot-modal').classList.add('active');
         }
 
-        function renderTurnPlots(plotUrls) {
+        function renderTurnPlots(plotUrls, turn) {
             const section = document.getElementById('turn-plots-section');
             const row = document.getElementById('turn-plots-row');
+            const title = document.getElementById('turn-plots-title');
             if (!plotUrls || Object.keys(plotUrls).length === 0) {
                 section.style.display = 'none';
                 return;
             }
             section.style.display = 'block';
+            title.textContent = turn ? `DSP Analysis Plots — Turn #${turn}` : 'DSP Analysis Plots';
             row.innerHTML = '';
-            const labels = {
-                waveform_plot: '🌊 Waveform',
-                fft_plot: '📈 FFT Spectrum',
-                shap_plot: '🎯 SHAP Importance',
-                combined_plot: '📋 Combined Analysis'
-            };
             Object.entries(plotUrls).forEach(([key, url]) => {
                 const div = document.createElement('div');
                 div.style.textAlign = 'center';
                 const label = document.createElement('div');
                 label.style.cssText = 'font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;';
-                label.textContent = labels[key] || key;
+                label.textContent = PLOT_LABELS[key] || key;
                 const img = document.createElement('img');
                 img.src = url + '?t=' + Date.now();
                 img.alt = key;
@@ -1078,13 +1222,18 @@
             });
         }
 
-        async function refreshPlotGallery() {
+        async function refreshPlotGallery(turn) {
+            if (!turn) {
+                return;
+            }
             try {
-                const res = await fetch('/api/plots');
+                const res = await fetch(`/api/plots?turn=${turn}`);
                 const plots = await res.json();
                 const gallery = document.getElementById('plots-gallery');
+                const galleryTitle = document.getElementById('plots-gallery-title');
+                galleryTitle.textContent = `Saved DSP Analysis Plots — Turn #${turn}`;
                 if (!plots || plots.length === 0) {
-                    gallery.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1 / -1;">No plots saved yet — process audio to generate DSP analysis plots</div>';
+                    gallery.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 2rem; grid-column: 1 / -1;">No plots saved yet for this turn — process audio to generate DSP analysis plots</div>';
                     return;
                 }
                 gallery.innerHTML = '';
@@ -1092,10 +1241,11 @@
                     const card = document.createElement('div');
                     card.className = 'plot-card';
                     card.onclick = () => openPlotModal(plot.url);
+                    const displayName = plot.name.replace(/^turn_\d+_/, '').replace(/_/g, ' ').replace(/\.png$/, '');
                     card.innerHTML = `
                         <img src="${plot.url}?t=${Date.now()}" alt="${plot.name}" loading="lazy">
                         <div class="plot-card-info">
-                            <span class="plot-card-name">${plot.name}</span>
+                            <span class="plot-card-name">${displayName}</span>
                             <span class="plot-card-size">${plot.size_kb} KB</span>
                         </div>
                     `;
