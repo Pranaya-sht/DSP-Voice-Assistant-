@@ -29,6 +29,7 @@ import time         # Timestamps, timing
 import threading    # Run visualization in parallel thread
 import argparse     # Command-line argument parsing
 from pathlib import Path  # Cross-platform path handling
+import numpy as np  # Numerical operations
 
 # Fix Windows console encoding for emoji/Unicode support
 if os.name == "nt":
