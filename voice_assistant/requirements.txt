@@ -1,0 +1,120 @@
+# ══════════════════════════════════════════════════════════════
+# Voice Assistant — Python Dependencies
+# ══════════════════════════════════════════════════════════════
+#
+# Install all dependencies at once:
+#   pip install -r requirements.txt
+#
+# Or with a virtual environment (RECOMMENDED):
+#   python -m venv venv
+#   venv\Scripts\activate          # Windows PowerShell
+#   source venv/bin/activate       # macOS / Linux
+#   pip install -r requirements.txt
+#
+# ══════════════════════════════════════════════════════════════
+
+# ── Audio I/O ─────────────────────────────────────────────────
+# sounddevice : Cross-platform microphone recording and speaker playback
+#               Uses PortAudio under the hood (auto-installed on Windows)
+sounddevice>=0.4.6
+
+# numpy : Fast numerical arrays — audio is stored as numpy arrays
+#         Also provides FFT (numpy.fft.fft) for frequency analysis
+numpy>=1.24.0
+
+# scipy : Scientific computing — used for reading/writing WAV files
+#         scipy.io.wavfile.write() / scipy.io.wavfile.read()
+scipy>=1.10.0
+
+# ── Speech-to-Text ────────────────────────────────────────────
+# faster-whisper : Optimized OpenAI Whisper using CTranslate2
+#                  2-4x faster than original Whisper, same accuracy
+#                  Downloads model weights from Hugging Face on first run
+faster-whisper>=1.0.0
+
+# ── AI Language Model APIs ────────────────────────────────────
+# openai : Official OpenAI Python client (GPT-4o, GPT-3.5-turbo, etc.)
+#          Requires: $env:OPENAI_API_KEY = "sk-..."
+openai>=1.12.0
+
+# google-generativeai : Google Gemini API client
+#                       Requires: $env:GEMINI_API_KEY = "AIza..."
+#                       Free API key at: https://aistudio.google.com/app/apikey
+google-generativeai>=0.7.0
+
+# ── Text-to-Speech ────────────────────────────────────────────
+# edge-tts : Microsoft Edge neural TTS (high quality, free, needs internet)
+#            Voices: en-US-JennyNeural, en-US-GuyNeural, en-GB-SoniaNeural, etc.
+#            List voices: edge-tts --list-voices
+edge-tts>=6.1.9
+
+# pyttsx3 : Offline TTS using system voices (SAPI5 on Windows, NSS on macOS)
+#           No internet needed — but lower quality than edge-tts
+pyttsx3>=2.90
+
+# ── Audio Format Conversion ───────────────────────────────────
+# pydub : Audio processing library — converts MP3 to PCM for playback
+#         IMPORTANT: Also requires ffmpeg installed on your system:
+#           Windows: winget install Gyan.FFmpeg
+#           macOS  : brew install ffmpeg
+#           Linux  : sudo apt install ffmpeg
+pydub>=0.25.1
+
+# audioop-lts : Compatibility shim for the 'audioop' module removed in Python 3.13+
+#               Required by pydub on Python 3.13 and newer
+audioop-lts>=0.2.1
+
+# playsound : Simple audio playback fallback (if pydub/ffmpeg unavailable)
+#             NOTE: Use version 1.2.2 — newer versions have bugs on Windows
+playsound==1.2.2
+
+# ── Visualization ─────────────────────────────────────────────
+# matplotlib : The main plotting library for DSP visualizations
+#              - Waveform plots (amplitude vs time)
+#              - FFT spectrum plots (magnitude vs frequency)
+#              - Real-time animated plots (FuncAnimation)
+#              - Dashboard layout (GridSpec)
+matplotlib>=3.7.0
+
+# ── Utilities (usually pre-installed with Python) ─────────────
+# These are part of the Python standard library — no installation needed:
+#   os, sys, time, threading, asyncio, argparse, tempfile, re, pathlib
+
+# ══════════════════════════════════════════════════════════════
+# OPTIONAL / GPU ACCELERATION
+# ══════════════════════════════════════════════════════════════
+#
+# For GPU-accelerated Whisper transcription (NVIDIA GPU only):
+#   pip install ctranslate2 --extra-index-url https://download.pytorch.org/whl/cu118
+#
+# Then run: python main.py --device cuda --compute-type float16
+#
+# ══════════════════════════════════════════════════════════════
+# WINDOWS-SPECIFIC NOTES
+# ══════════════════════════════════════════════════════════════
+#
+# sounddevice on Windows requires PortAudio DLLs.
+# If you get a PortAudio error:
+#   pip install sounddevice  (usually bundles PortAudio automatically)
+#
+# If pyttsx3 fails on Windows:
+#   pip install pywin32
+#
+# If you see "No module named '_tkinter'" for matplotlib:
+#   Reinstall Python and check "tcl/tk and IDLE" during installation.
+#
+# ══════════════════════════════════════════════════════════════
+# AI-Adaptive DSP Pipeline Dependencies
+# ══════════════════════════════════════════════════════════════
+librosa>=0.10.0
+scikit-learn>=1.3.0
+shap>=0.44.0
+PyWavelets>=1.4.0
+panns_inference>=0.1.0
+joblib>=1.3.0
+torch>=2.0.0
+torchaudio>=2.0.0
+streamlit>=1.35.0
+pandas>=2.0.0
+plotly>=6.8.0
+

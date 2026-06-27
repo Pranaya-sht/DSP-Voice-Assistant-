@@ -1,0 +1,299 @@
+[
+  {
+    "file": "silence-1sec-44100hz-16bit.wav",
+    "status": "PASS",
+    "audio_type": "silence",
+    "expected": {
+      "filter": "none",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "predicted": {
+      "filter": "none",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "feature_summary": {
+      "noise_level": -200.0,
+      "snr_db": 50.0,
+      "spectral_centroid": 0.0,
+      "zero_crossing_rate": 0.0,
+      "bandwidth": 0.0,
+      "dominant_frequency": 50.0,
+      "rms_db_overall": -200.0,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 2779.776800001855
+  },
+  {
+    "file": "pure-tone.wav",
+    "status": "PASS",
+    "audio_type": "pure_tone_sweep",
+    "expected": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -82.56310013196529,
+      "snr_db": 75.72820716099925,
+      "spectral_centroid": 6913.37840777521,
+      "zero_crossing_rate": 0.2976137981536564,
+      "bandwidth": 2344.4314810187666,
+      "dominant_frequency": 500.0,
+      "rms_db_overall": -6.889521773273898,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 498.32129999413155
+  },
+  {
+    "file": "test_silence.wav",
+    "status": "PASS",
+    "audio_type": "silence",
+    "expected": {
+      "filter": "none",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "predicted": {
+      "filter": "none",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "feature_summary": {
+      "noise_level": -200.0,
+      "snr_db": 50.0,
+      "spectral_centroid": 0.0,
+      "zero_crossing_rate": 0.0,
+      "bandwidth": 0.0,
+      "dominant_frequency": 50.0,
+      "rms_db_overall": -200.0,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 86.73110000381712
+  },
+  {
+    "file": "voice-telephony-8khz.wav",
+    "status": "PASS",
+    "audio_type": "telephony_speech",
+    "expected": {
+      "filter": "bandpass",
+      "fft_size": 512,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "bandpass",
+      "fft_size": 512,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -19.085330055362235,
+      "snr_db": -1.0456511384108644,
+      "spectral_centroid": 946.3131469012177,
+      "zero_crossing_rate": 0.14857293567518248,
+      "bandwidth": 891.4494373345203,
+      "dominant_frequency": 126.27376425855513,
+      "rms_db_overall": -20.10856238039072,
+      "sample_rate": 8000
+    },
+    "mismatches": [],
+    "elapsed_ms": 110.43429998971988
+  },
+  {
+    "file": "cnn14 test.wav",
+    "status": "PASS",
+    "audio_type": "low_freq_dominant",
+    "expected": {
+      "filter": "highpass",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "predicted": {
+      "filter": "highpass",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "feature_summary": {
+      "noise_level": -13.524679705144347,
+      "snr_db": -4.527263075838558,
+      "spectral_centroid": 2675.0995970279105,
+      "zero_crossing_rate": 0.04142233722447796,
+      "bandwidth": 3530.1707245495545,
+      "dominant_frequency": 77.4,
+      "rms_db_overall": -17.319845608258216,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 92.85210000234656
+  },
+  {
+    "file": "cnn14 test2.wav",
+    "status": "PASS",
+    "audio_type": "electrical_hum_pure",
+    "expected": {
+      "filter": "notch",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "predicted": {
+      "filter": "notch",
+      "fft_size": 512,
+      "feature_set": "fft"
+    },
+    "feature_summary": {
+      "noise_level": -136.50085597180214,
+      "snr_db": 109.33464924373723,
+      "spectral_centroid": 281.26304787143033,
+      "zero_crossing_rate": 0.007328750362529003,
+      "bandwidth": 301.7320521733222,
+      "dominant_frequency": 852.4000000000001,
+      "rms_db_overall": -27.6237814001316,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 91.47490000759717
+  },
+  {
+    "file": "High broadband noise2.wav",
+    "status": "PASS",
+    "audio_type": "broadband_noise_high",
+    "expected": {
+      "filter": "wiener",
+      "fft_size": 2048,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "wiener",
+      "fft_size": 2048,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -15.920109410072618,
+      "snr_db": -3.971708061768295,
+      "spectral_centroid": 1540.2758962880744,
+      "zero_crossing_rate": 0.11650028935185185,
+      "bandwidth": 1402.1973833857526,
+      "dominant_frequency": 284.4167408726625,
+      "rms_db_overall": -19.61184843503892,
+      "sample_rate": 16000
+    },
+    "mismatches": [],
+    "elapsed_ms": 144.4989000010537
+  },
+  {
+    "file": "High broadband noise.wav",
+    "status": "PASS",
+    "audio_type": "moderate_noise_speech",
+    "expected": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -27.127709883859797,
+      "snr_db": 1.5344092985077964,
+      "spectral_centroid": 1747.1756755613505,
+      "zero_crossing_rate": 0.13345221920289854,
+      "bandwidth": 1537.6178314134966,
+      "dominant_frequency": 198.09437386569874,
+      "rms_db_overall": -25.65234972689393,
+      "sample_rate": 16000
+    },
+    "mismatches": [],
+    "elapsed_ms": 119.85260000801645
+  },
+  {
+    "file": "test_humSpeech + electrical hum .wav",
+    "status": "PASS",
+    "audio_type": "speech_plus_hum",
+    "expected": {
+      "filter": "wiener",
+      "fft_size": 2048,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "wiener",
+      "fft_size": 2048,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -8.309624801747411,
+      "snr_db": -0.023070634695652993,
+      "spectral_centroid": 9381.834133932462,
+      "zero_crossing_rate": 0.08586272839327146,
+      "bandwidth": 7063.03750174647,
+      "dominant_frequency": 50.0,
+      "rms_db_overall": -8.330383112358717,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 122.75070000032429
+  },
+  {
+    "file": "sterio.wav",
+    "status": "PASS",
+    "audio_type": "stereo_high_res",
+    "expected": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -21.845818657429685,
+      "snr_db": 7.2741266847418515,
+      "spectral_centroid": 742.4757528753723,
+      "zero_crossing_rate": 0.007316494428768219,
+      "bandwidth": 1643.3418066024115,
+      "dominant_frequency": 73.66666666666667,
+      "rms_db_overall": -14.63091664568385,
+      "sample_rate": 96000
+    },
+    "mismatches": [],
+    "elapsed_ms": 762.5925000029383
+  },
+  {
+    "file": "mono.wav",
+    "status": "PASS",
+    "audio_type": "mono_speech",
+    "expected": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "predicted": {
+      "filter": "bandpass",
+      "fft_size": 1024,
+      "feature_set": "mfcc"
+    },
+    "feature_summary": {
+      "noise_level": -19.38590707311377,
+      "snr_db": -0.7001249451320081,
+      "spectral_centroid": 3845.173612504014,
+      "zero_crossing_rate": 0.09656655967288173,
+      "bandwidth": 3740.4955824561175,
+      "dominant_frequency": 126.27376425855513,
+      "rms_db_overall": -20.071612696748385,
+      "sample_rate": 44100
+    },
+    "mismatches": [],
+    "elapsed_ms": 447.34969999990426
+  }
+]

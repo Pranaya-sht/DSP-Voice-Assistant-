@@ -1,0 +1,33 @@
+# Python virtual environment
+voice_assistant/venv/
+voice_assistant/.venv/
+venv/
+.venv/
+ENV/
+env/
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+voice_assistant/__pycache__/
+voice_assistant/**/*.pyc
+
+# Local secrets / environment configuration
+.env
+voice_assistant/.env
+
+# Temporary audio and visualizations
+voice_assistant/recordings/
+voice_assistant/temp_audio/
+voice_assistant/plots/
+voice_assistant/dashboard_state/
+*.wav
+*.mp3
+*.png
+
+# IDE / System configurations
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
