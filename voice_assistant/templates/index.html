@@ -807,6 +807,7 @@
                                 method: 'POST',
                                 body: formData
                             });
+                            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
                             const state = await res.json();
                             renderDashboard(state);
                             await refreshState();
@@ -849,6 +850,7 @@
                     method: 'POST',
                     body: formData
                 });
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
                 const state = await res.json();
                 renderDashboard(state);
                 await refreshState();
@@ -875,6 +877,7 @@
                     method: 'POST',
                     body: formData
                 });
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
                 const state = await res.json();
                 renderDashboard(state);
                 await refreshState();
