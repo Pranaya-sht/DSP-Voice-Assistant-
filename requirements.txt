@@ -60,9 +60,7 @@ pyttsx3>=2.90
 #           Linux  : sudo apt install ffmpeg
 pydub>=0.25.1
 
-# audioop-lts : Compatibility shim for the 'audioop' module removed in Python 3.13+
 #               Required by pydub on Python 3.13 and newer
-audioop-lts>=0.2.1
 
 # playsound : Simple audio playback fallback (if pydub/ffmpeg unavailable)
 #             NOTE: Use version 1.2.2 — newer versions have bugs on Windows
