@@ -46,6 +46,8 @@ whisper_model = None
 dsp_engine = None
 history = None
 turn_count = 0
+latest_dsp_context: str | None = None
+ai_backend = os.environ.get("AI_BACKEND", "gemini")
 
 @app.on_event("startup")
 def startup_event():
@@ -64,8 +66,11 @@ def startup_event():
         dsp_engine.train_on_synthetic_data()
         
     print("[Server] Initializing Conversation History...")
-    from ai_utils import ConversationHistory, DEFAULT_SYSTEM_PROMPT
-    history = ConversationHistory(system_prompt=DEFAULT_SYSTEM_PROMPT)
+    from ai_utils import ConversationHistory, build_system_prompt, get_gemini_api_keys, get_openai_api_keys
+    history = ConversationHistory(system_prompt=build_system_prompt("auto"))
+    gemini_keys = len(get_gemini_api_keys())
+    openai_keys = len(get_openai_api_keys())
+    print(f"[Server] AI backend: {ai_backend} | Gemini keys: {gemini_keys} | OpenAI keys: {openai_keys}")
     
     # Sync turn count with existing latest turn if it exists
     state_file = DASHBOARD_STATE_DIR / "latest_turn.json"
@@ -291,10 +296,80 @@ def generate_turn_plots(
 
     return plot_urls
 
+async def synthesize_tts(text: str) -> str | None:
+    """Generate TTS audio and return its URL path."""
+    from tts_utils import clean_text_for_speech, ensure_temp_dir
+    import edge_tts
+    clean_text = clean_text_for_speech(text)
+    if not clean_text:
+        return None
+    ensure_temp_dir()
+    temp_filename = f"tts_{int(time.time()*1000)}.mp3"
+    tts_dest = TEMP_AUDIO_DIR / temp_filename
+    communicate = edge_tts.Communicate(text=clean_text, voice="en-US-JennyNeural")
+    await communicate.save(str(tts_dest))
+    return f"/audio/tts/{temp_filename}"
+
+
+async def ask_assistant(
+    user_text: str,
+    dsp_context: str | None = None,
+    explanation_style: str = "auto",
+    is_followup: bool = False,
+    with_tts: bool = False,
+) -> dict:
+    """Query the LLM with optional DSP context and return response payload."""
+    global history, latest_dsp_context, ai_backend
+    from ai_utils import query_ai, handle_special_commands, style_display_name
+
+    special = handle_special_commands(user_text, history)
+    if special:
+        tts_url = await synthesize_tts(special) if with_tts else None
+        return {
+            "ai_response": special,
+            "tts_audio_url": tts_url,
+            "explanation_style": history.explanation_style,
+            "explanation_style_label": style_display_name(history.explanation_style),
+            "conversation": history.get_ui_messages(),
+            "is_special_command": True,
+        }
+
+    ctx = dsp_context if dsp_context is not None else (latest_dsp_context if is_followup else None)
+    try:
+        ai_response = query_ai(
+            user_text=user_text,
+            history=history,
+            backend=ai_backend,
+            max_tokens=1536,
+            dsp_context=ctx,
+            explanation_style=explanation_style,
+            is_followup=is_followup,
+        )
+    except Exception as api_err:
+        print(f"[Server] AI query failed: {api_err}")
+        ai_response = (
+            "I'm having trouble reaching the AI service right now — this is often a rate limit or API key issue. "
+            "Your message was received. Try again in a moment, or add backup API keys via GEMINI_API_KEYS."
+        )
+
+    tts_url = await synthesize_tts(ai_response) if with_tts else None
+    return {
+        "ai_response": ai_response,
+        "tts_audio_url": tts_url,
+        "explanation_style": history.explanation_style,
+        "explanation_style_label": style_display_name(history.explanation_style),
+        "conversation": history.get_ui_messages(),
+        "is_special_command": False,
+    }
+
 # ── Pipeline Runner Helper ────────────────────────────────────
-async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
+async def run_pipeline_on_audio(
+    audio_data: np.ndarray,
+    sample_rate: int,
+    explanation_style: str = "auto",
+):
     """Run the 8-stage voice assistant and adaptive DSP pipeline asynchronously."""
-    global turn_count, history, whisper_model, dsp_engine
+    global turn_count, history, whisper_model, dsp_engine, latest_dsp_context
     
     from preprocessing import preprocess
     from dsp_utils import extract_feature_summary
@@ -302,13 +377,12 @@ async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
     from cnn14_classifier import classify as cnn14_classify
     from explainability import compute_shap_frequency_importance
     from audio_utils import save_wav
-    from ai_utils import query_ai
-    from tts_utils import clean_text_for_speech, ensure_temp_dir
-    import edge_tts
+    from ai_utils import build_dsp_context
     from dashboard_writer import write_turn_state
     
     turn_count += 1
     turn = turn_count
+    pipeline_start = time.perf_counter()
     
     # 1. Preprocessing
     preprocessed = preprocess(audio_data, sample_rate)
@@ -339,6 +413,23 @@ async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
     except Exception as e:
         print(f"[SHAP] Error: {e}")
         freq_importance = {"frequencies": [], "importance": []}
+
+    dsp_params["elapsed_ms"] = (time.perf_counter() - pipeline_start) * 1000
+
+    raw_peak = float(np.max(np.abs(audio_normalized))) if len(audio_normalized) else 0.0
+    filt_peak = float(np.max(np.abs(filtered_audio))) if len(filtered_audio) else 0.0
+    raw_rms = float(np.sqrt(np.mean(audio_normalized ** 2))) if len(audio_normalized) else 0.0
+    filt_rms = float(np.sqrt(np.mean(filtered_audio ** 2))) if len(filtered_audio) else 0.0
+    peak_reduction_pct = ((filt_peak - raw_peak) / raw_peak * 100) if raw_peak > 0 else 0.0
+    waveform_stats = {
+        "duration_s": len(audio_normalized) / sample_rate,
+        "sample_rate_hz": sample_rate,
+        "raw_peak": raw_peak,
+        "filtered_peak": filt_peak,
+        "raw_rms": raw_rms,
+        "filtered_rms": filt_rms,
+        "peak_reduction_pct": peak_reduction_pct,
+    }
         
     # Save the filtered audio to a WAV file to feed to Whisper STT
     wav_filename = f"turn_{turn:03d}_{int(time.time())}.wav"
@@ -356,34 +447,31 @@ async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
     user_text = " ".join([segment.text for segment in segments]).strip()
     
     # Fallback if Whisper doesn't output anything
+    tts_audio_url = None
     if not user_text:
         user_text = "[No speech detected]"
         ai_response = "I couldn't hear or understand anything. Could you please speak again?"
     else:
-        # 8. Query AI (Gemini)
-        try:
-            ai_response = query_ai(
-                user_text=user_text,
-                history=history,
-                backend="gemini",
-                max_tokens=1024
-            )
-        except Exception as api_err:
-            print(f"[Server] ⚠️ Gemini API Query failed: {api_err}")
-            ai_response = f"[API Error / Rate Limit Exceeded] I processed your speech: '{user_text}', but my AI brain was unable to answer because of a Gemini API quota limit. Please check your Gemini key or try again in a few minutes!"
-        
-    # 9. Speak TTS response (Async edge_tts communicate)
-    clean_text = clean_text_for_speech(ai_response)
-    if clean_text:
-        ensure_temp_dir()
-        temp_filename = f"tts_{int(time.time()*1000)}.mp3"
-        tts_dest = TEMP_AUDIO_DIR / temp_filename
-        
-        communicate = edge_tts.Communicate(text=clean_text, voice="en-US-JennyNeural")
-        await communicate.save(str(tts_dest))
-        tts_audio_url = f"/audio/tts/{temp_filename}"
-    else:
-        tts_audio_url = None
+        # 8. Query AI — only after full DSP analysis + transcription
+        dsp_context = build_dsp_context(
+            turn=turn,
+            pipeline_info=dsp_params,
+            feature_summary=feature_summary,
+            cnn14_predictions=cnn14_preds,
+            freq_importance=freq_importance,
+            waveform_stats=waveform_stats,
+            rf_importances=dsp_engine.get_feature_importances(),
+        )
+        latest_dsp_context = dsp_context
+        chat_result = await ask_assistant(
+            user_text=user_text,
+            dsp_context=dsp_context,
+            explanation_style=explanation_style,
+            is_followup=False,
+            with_tts=True,
+        )
+        ai_response = chat_result["ai_response"]
+        tts_audio_url = chat_result["tts_audio_url"]
         
     # 10. Write turn state to disk
     old_cwd = os.getcwd()
@@ -410,6 +498,10 @@ async def run_pipeline_on_audio(audio_data: np.ndarray, sample_rate: int):
         state = json.load(f)
         
     state["tts_audio_url"] = tts_audio_url
+    state["conversation"] = history.get_ui_messages() if history else []
+    state["explanation_style"] = history.explanation_style if history else "auto"
+    from ai_utils import style_display_name
+    state["explanation_style_label"] = style_display_name(state["explanation_style"])
     
     # Generate and save matplotlib plots to plots/ directory
     try:
@@ -448,6 +540,12 @@ def get_latest_state():
         state = json.load(f)
     if not state.get("plot_urls") and state.get("turn"):
         state["plot_urls"] = get_plot_urls_for_turn(int(state["turn"]))
+    if history:
+        from ai_utils import style_display_name
+        state["conversation"] = history.get_ui_messages()
+        state["explanation_style"] = history.explanation_style
+        state["explanation_style_label"] = style_display_name(history.explanation_style)
+        state["has_dsp_context"] = latest_dsp_context is not None
     return JSONResponse(content=state)
 
 @app.get("/api/history")
@@ -469,7 +567,10 @@ def get_test_files():
     return JSONResponse(content=files)
 
 @app.post("/api/process")
-async def process_audio(file: UploadFile = File(...)):
+async def process_audio(
+    file: UploadFile = File(...),
+    explanation_style: str = Form("auto"),
+):
     """Process an uploaded audio file (or browser microphone recording)."""
     import numpy as np
     from pathlib import Path
@@ -487,7 +588,7 @@ async def process_audio(file: UploadFile = File(...)):
         raw_audio, sr = load_audio_file(str(temp_file_path))
         
         # Run processing pipeline
-        state = await run_pipeline_on_audio(raw_audio, sr)
+        state = await run_pipeline_on_audio(raw_audio, sr, explanation_style=explanation_style)
         return JSONResponse(content=state)
     except Exception as e:
         traceback.print_exc()
@@ -497,7 +598,10 @@ async def process_audio(file: UploadFile = File(...)):
             temp_file_path.unlink()
 
 @app.post("/api/run-test")
-async def run_test_file(filename: str = Form(...)):
+async def run_test_file(
+    filename: str = Form(...),
+    explanation_style: str = Form("auto"),
+):
     """Process a pre-loaded test audio file from the dropdown selector."""
     import numpy as np
     
@@ -510,19 +614,73 @@ async def run_test_file(filename: str = Form(...)):
         raw_audio, sr = load_audio_file(str(test_file_path))
         
         # Run processing pipeline
-        state = await run_pipeline_on_audio(raw_audio, sr)
+        state = await run_pipeline_on_audio(raw_audio, sr, explanation_style=explanation_style)
         return JSONResponse(content=state)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/conversation")
+def get_conversation():
+    """Return the live LLM conversation thread."""
+    from ai_utils import style_display_name, EXPLANATION_STYLES
+    if not history:
+        return JSONResponse(content={"messages": [], "explanation_style": "auto"})
+    return JSONResponse(content={
+        "messages": history.get_ui_messages(),
+        "explanation_style": history.explanation_style,
+        "explanation_style_label": style_display_name(history.explanation_style),
+        "available_styles": list(EXPLANATION_STYLES.keys()),
+        "has_dsp_context": latest_dsp_context is not None,
+    })
+
+
+@app.post("/api/chat")
+async def chat_followup(
+    message: str = Form(...),
+    explanation_style: str = Form("auto"),
+    with_tts: str = Form("false"),
+):
+    """Text follow-up chat using the last audio turn's DSP analysis context."""
+    global history
+    if not message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    if not history:
+        raise HTTPException(status_code=503, detail="Assistant not initialized.")
+
+    tts_enabled = with_tts.lower() in ("true", "1", "yes")
+    result = await ask_assistant(
+        user_text=message.strip(),
+        dsp_context=None,
+        explanation_style=explanation_style,
+        is_followup=True,
+        with_tts=tts_enabled,
+    )
+    return JSONResponse(content=result)
+
+
+@app.post("/api/set-style")
+def set_explanation_style(style: str = Form(...)):
+    """Update the active explanation style without sending a message."""
+    from ai_utils import style_display_name, normalize_explanation_style
+    if not history:
+        raise HTTPException(status_code=503, detail="Assistant not initialized.")
+    normalized = history.set_explanation_style(style)
+    return JSONResponse(content={
+        "explanation_style": normalized,
+        "explanation_style_label": style_display_name(normalized),
+    })
+
+
 @app.post("/api/clear")
 def clear_workspace():
     """Clear conversation history memory and disk JSON states."""
-    global history, turn_count
+    global history, turn_count, latest_dsp_context
     if history:
         history.clear()
+        history.set_explanation_style("auto")
     turn_count = 0
+    latest_dsp_context = None
     
     state_file = DASHBOARD_STATE_DIR / "latest_turn.json"
     if state_file.exists():

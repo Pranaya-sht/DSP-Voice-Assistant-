@@ -95,6 +95,7 @@ from dsp_utils import (
 )
 from ai_utils import (
     query_ai,
+    build_dsp_context,
     ConversationHistory,
     check_wake_word,
     handle_special_commands,
@@ -509,22 +510,23 @@ def run_adaptive_pipeline(
     # 6. Adaptive DSP (Apply chosen filter and feature extraction)
     adaptive_result = run_adaptive_dsp(preprocessed["normalized"], sample_rate, dsp_params)
     
-    # 7-8. CNN14 Classifier & SHAP Explainability Plot (if plots enabled)
-    cnn14_preds = []
+    # 7-8. CNN14 Classifier & SHAP Explainability (always run before LLM)
+    cnn14_preds = cnn14_classify(adaptive_result["filtered_audio"], sample_rate)
     freq_importance = {}
-    
+    try:
+        freq_importance = compute_shap_frequency_importance(
+            adaptive_result["features"],
+            adaptive_result["feature_set"],
+            dsp_engine,
+            sample_rate,
+            dsp_params["fft_size"]
+        )
+    except Exception as e:
+        print(f"[DSP] Warning: SHAP frequency importance failed: {e}")
+
     if not args.no_plots:
-        print("[DSP] Classifying audio environment and generating explainability plot...")
-        cnn14_preds = cnn14_classify(adaptive_result["filtered_audio"], sample_rate)
-        
+        print("[DSP] Generating explainability plot...")
         try:
-            freq_importance = compute_shap_frequency_importance(
-                adaptive_result["features"],
-                adaptive_result["feature_set"],
-                dsp_engine,
-                sample_rate,
-                dsp_params["fft_size"]
-            )
             plot_explainability_dashboard(
                 rf_importance=dsp_engine.get_feature_importances(),
                 freq_importance=freq_importance,
@@ -803,9 +805,32 @@ def main(args: argparse.Namespace) -> None:
                 continue
 
             # ────────────────────────────────────────────────────────────────
-            # STEP 5+6: Send to AI and receive response
+            # STEP 5+6: Send to AI (with full DSP context) and receive response
             # ────────────────────────────────────────────────────────────────
-            print("\n[Main] Sending to AI...")
+            print("\n[Main] Sending to AI with DSP analysis context...")
+            raw_peak = float(np.max(np.abs(audio_data))) if len(audio_data) else 0.0
+            filt_peak = float(np.max(np.abs(filtered_audio))) if len(filtered_audio) else 0.0
+            raw_rms = float(np.sqrt(np.mean(audio_data ** 2))) if len(audio_data) else 0.0
+            filt_rms = float(np.sqrt(np.mean(filtered_audio ** 2))) if len(filtered_audio) else 0.0
+            peak_reduction_pct = ((filt_peak - raw_peak) / raw_peak * 100) if raw_peak > 0 else 0.0
+            waveform_stats = {
+                "duration_s": len(audio_data) / sample_rate,
+                "sample_rate_hz": sample_rate,
+                "raw_peak": raw_peak,
+                "filtered_peak": filt_peak,
+                "raw_rms": raw_rms,
+                "filtered_rms": filt_rms,
+                "peak_reduction_pct": peak_reduction_pct,
+            }
+            dsp_context = build_dsp_context(
+                turn=turn,
+                pipeline_info=pipeline_info,
+                feature_summary=feature_summary,
+                cnn14_predictions=cnn14_preds,
+                freq_importance=freq_importance,
+                waveform_stats=waveform_stats,
+                rf_importances=dsp_engine.get_feature_importances(),
+            )
             try:
                 ai_response = query_ai(
                     user_text=user_text,
@@ -813,6 +838,7 @@ def main(args: argparse.Namespace) -> None:
                     backend=args.backend,
                     temperature=args.temperature,
                     max_tokens=args.max_tokens,
+                    dsp_context=dsp_context,
                 )
             except Exception as e:
                 ai_response = f"Sorry, I had trouble connecting to the AI. Error: {str(e)[:80]}"
@@ -892,9 +918,8 @@ def main(args: argparse.Namespace) -> None:
 
 def ai_utils_get_system_prompt(args: argparse.Namespace) -> str:
     """Build the system prompt based on command-line args."""
-    # Import here to avoid circular imports at module level
-    from ai_utils import DEFAULT_SYSTEM_PROMPT
-    return DEFAULT_SYSTEM_PROMPT
+    from ai_utils import build_system_prompt
+    return build_system_prompt("auto")
 
 
 # ─── Command-Line Arguments ───────────────────────────────────────────────────

@@ -263,11 +263,12 @@ def process_interactive_audio(audio_data: np.ndarray, sample_rate: int) -> None:
     from cnn14_classifier import classify as cnn14_classify
     from explainability import compute_shap_frequency_importance
     from audio_utils import save_wav
-    from ai_utils import query_ai
+    from ai_utils import query_ai, build_dsp_context
     
     # Increment turn
     st.session_state.turn_count += 1
     turn = st.session_state.turn_count
+    pipeline_start = time.perf_counter()
     
     status_box = st.status("🔬 Processing audio turn...", expanded=True)
     
@@ -306,6 +307,23 @@ def process_interactive_audio(audio_data: np.ndarray, sample_rate: int) -> None:
         )
     except Exception as e:
         freq_importance = {"frequencies": [], "importance": []}
+
+    dsp_params["elapsed_ms"] = (time.perf_counter() - pipeline_start) * 1000
+
+    raw_peak = float(np.max(np.abs(audio_normalized))) if len(audio_normalized) else 0.0
+    filt_peak = float(np.max(np.abs(filtered_audio))) if len(filtered_audio) else 0.0
+    raw_rms = float(np.sqrt(np.mean(audio_normalized ** 2))) if len(audio_normalized) else 0.0
+    filt_rms = float(np.sqrt(np.mean(filtered_audio ** 2))) if len(filtered_audio) else 0.0
+    peak_reduction_pct = ((filt_peak - raw_peak) / raw_peak * 100) if raw_peak > 0 else 0.0
+    waveform_stats = {
+        "duration_s": len(audio_normalized) / sample_rate,
+        "sample_rate_hz": sample_rate,
+        "raw_peak": raw_peak,
+        "filtered_peak": filt_peak,
+        "raw_rms": raw_rms,
+        "filtered_rms": filt_rms,
+        "peak_reduction_pct": peak_reduction_pct,
+    }
     
     # Save the filtered audio to a WAV file to feed to Whisper
     wav_filename = f"turn_{turn:03d}_{int(time.time())}.wav"
@@ -329,13 +347,24 @@ def process_interactive_audio(audio_data: np.ndarray, sample_rate: int) -> None:
         st.session_state.turn_count -= 1
         return
         
-    # 8. Query AI (Gemini / OpenAI)
-    status_box.write("8. Querying Gemini LLM assistant...")
+    # 8. Query AI (Gemini) — after full DSP analysis + transcription
+    status_box.write("8. Querying Gemini LLM assistant (with DSP context)...")
+    dsp_context = build_dsp_context(
+        turn=turn,
+        pipeline_info=dsp_params,
+        feature_summary=feature_summary,
+        cnn14_predictions=cnn14_preds,
+        freq_importance=freq_importance,
+        waveform_stats=waveform_stats,
+        rf_importances=dsp_engine.get_feature_importances(),
+    )
     ai_response = query_ai(
         user_text=user_text,
         history=st.session_state.history,
         backend="gemini",
-        max_tokens=1024
+        max_tokens=1536,
+        dsp_context=dsp_context,
+        explanation_style=st.session_state.get("explanation_style", "auto"),
     )
     
     # 9. Speak TTS response
@@ -641,8 +670,13 @@ def main():
         
         # ── Initialize session state ──────────────────────────────
         if "history" not in st.session_state:
-            from ai_utils import ConversationHistory
-            st.session_state.history = ConversationHistory(max_history_turns=10)
+            from ai_utils import ConversationHistory, build_system_prompt
+            st.session_state.history = ConversationHistory(
+                system_prompt=build_system_prompt("auto"),
+                max_history_turns=10,
+            )
+        if "explanation_style" not in st.session_state:
+            st.session_state.explanation_style = "auto"
         if "turn_count" not in st.session_state:
             st.session_state.turn_count = 0
         if "latest_state" not in st.session_state:

@@ -39,17 +39,126 @@ DEFAULT_BACKEND: str = os.environ.get("AI_BACKEND", "openai")
 DEFAULT_OPENAI_MODEL: str = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")     # Cheaper, fast, very capable
 DEFAULT_GEMINI_MODEL: str = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash") # Active, fast, and free tier available
 
-# System prompt that defines the AI's persona and behavior
-DEFAULT_SYSTEM_PROMPT: str = """You are a helpful, friendly, and conversational AI voice assistant.
+# Explanation styles users can pick (UI) or ask for (voice/text)
+EXPLANATION_STYLES: Dict[str, str] = {
+    "auto": (
+        "Pick the clearest style for each question. Use simple language by default; "
+        "go deeper only when the user asks."
+    ),
+    "simple": (
+        "Explain like I'm 10: very short sentences, everyday words, zero jargon. "
+        "Use fun comparisons a child would understand."
+    ),
+    "college": (
+        "Explain like a college student: correct terminology, logical steps, moderate depth. "
+        "Define technical terms briefly when first used."
+    ),
+    "math": (
+        "Explain mathematically: include relevant formulas, variables, and signal-processing "
+        "notation (e.g., SNR in dB, Fourier transform, filter transfer functions). "
+        "Still keep it speakable — read formulas aloud in words."
+    ),
+    "visual": (
+        "Explain visually: describe what the waveform and spectrum LOOK like — peaks, valleys, "
+        "hills, flat lines, bright vs dim frequency bands. Guide the listener to imagine the plot."
+    ),
+    "analogy": (
+        "Explain with analogy: tie every concept to everyday sounds or objects "
+        "(ocean waves, radio static, humming fridge, whisper vs shout, windshield wipers)."
+    ),
+}
 
-Important rules for voice responses:
-- Keep responses concise and natural for spoken audio (2-4 sentences max unless asked for more)
-- Avoid using markdown, bullet points, or formatting — speak in plain conversational prose
-- Use simple, clear language that sounds natural when spoken aloud
-- If you don't know something, say so clearly and briefly
-- You can have memory of the current conversation
+EXPLANATION_STYLE_ALIASES: Dict[str, str] = {
+    "eli10": "simple",
+    "el10": "simple",
+    "kid": "simple",
+    "child": "simple",
+    "beginner": "simple",
+    "simple": "simple",
+    "college": "college",
+    "student": "college",
+    "undergrad": "college",
+    "math": "math",
+    "mathematical": "math",
+    "mathematics": "math",
+    "equation": "math",
+    "visual": "visual",
+    "visually": "visual",
+    "picture": "visual",
+    "analogy": "analogy",
+    "analogies": "analogy",
+    "metaphor": "analogy",
+    "auto": "auto",
+    "normal": "auto",
+    "default": "auto",
+}
 
-Your personality: warm, helpful, knowledgeable, and slightly witty."""
+STYLE_TRIGGER_PHRASES: Dict[str, List[str]] = {
+    "simple": [
+        "explain like i'm 10", "explain like i am 10", "explain like a kid",
+        "explain simply", "eli10", "like i'm five", "explain like i'm 5",
+    ],
+    "college": [
+        "explain like a college student", "college level", "undergraduate",
+    ],
+    "math": [
+        "explain mathematically", "with math", "with equations", "show the formula",
+    ],
+    "visual": [
+        "explain visually", "paint a picture", "describe what it looks like",
+    ],
+    "analogy": [
+        "explain with analogy", "explain with an analogy", "use an analogy",
+        "compare it to something",
+    ],
+}
+
+BASE_SYSTEM_PROMPT: str = """You are a voice-first AI assistant that is BOTH a friendly general chatbot AND a digital signal processing (DSP) expert.
+
+Your dual role:
+1. General assistant — answer everyday questions naturally (weather, facts, advice, small talk).
+2. DSP & audio expert — explain waveforms, spectra, filters, noise, speech, and the analysis data provided. Suggest real-world applications when helpful.
+
+Real-world DSP applications you can mention when relevant:
+- Hearing aids and cochlear implants (bandpass, noise reduction)
+- Phone and video calls (echo cancellation, noise suppression)
+- Smart speakers and voice assistants (VAD, beamforming)
+- Music production and podcasts (EQ, compression, de-noising)
+- Medical ultrasound and sonar (frequency analysis)
+- Radar and wireless communications (filtering, SNR)
+- Audio forensics and security (environment classification)
+
+How input works:
+- [DSP ANALYSIS CONTEXT] blocks are computed BEFORE you respond (preprocessing, features, Random Forest filter choice, adaptive DSP, CNN14, SHAP). Treat them as ground truth for that audio turn.
+- [USER MESSAGE] is what the person said or typed. Answer their intent using conversation history plus DSP context when relevant.
+- On follow-up messages without new audio, use the most recent DSP context and prior chat — do not pretend you re-analyzed audio.
+
+Conversation rules:
+- Maintain multi-turn context: refer back to earlier questions naturally.
+- If the user switches topics, follow them; if they return to audio, reconnect to the last analysis.
+- When they ask "what applications" or "where is this used", give 2–4 concrete examples tied to their audio metrics when possible.
+- If speech was not detected or context is missing, say so honestly.
+
+Voice output rules (text-to-speech):
+- Write natural spoken prose. No markdown, bullet lists, or code blocks unless the user explicitly asks for technical detail.
+- For simple questions: 2–4 sentences. For teaching moments: up to 8–10 sentences.
+- Read numbers clearly (e.g., "fifteen decibels" or "15 dB" — both fine for TTS).
+
+Personality: warm, patient, encouraging — like a favorite teacher who loves audio engineering."""
+
+
+def build_system_prompt(explanation_style: str = "auto") -> str:
+    """Build the full system prompt with the active explanation style."""
+    style = normalize_explanation_style(explanation_style)
+    style_text = EXPLANATION_STYLES.get(style, EXPLANATION_STYLES["auto"])
+    return (
+        f"{BASE_SYSTEM_PROMPT}\n\n"
+        f"ACTIVE EXPLANATION STYLE ({style.upper()}):\n{style_text}\n\n"
+        "If the user asks to change explanation style, adapt immediately on the next reply."
+    )
+
+
+DEFAULT_SYSTEM_PROMPT: str = build_system_prompt("auto")
 
 
 # ─── Conversation History Manager ────────────────────────────────────────────
@@ -85,9 +194,20 @@ class ConversationHistory:
         """
         self.system_prompt = system_prompt
         self.max_history_turns = max_history_turns
+        self.explanation_style: str = "auto"
         
         # The message list — start empty (system prompt added separately)
         self._messages: List[Dict[str, str]] = []
+
+    def set_explanation_style(self, style: str) -> str:
+        """Update explanation style and refresh the system prompt."""
+        self.explanation_style = normalize_explanation_style(style)
+        self.system_prompt = build_system_prompt(self.explanation_style)
+        return self.explanation_style
+
+    def get_ui_messages(self) -> List[Dict[str, str]]:
+        """Return conversation messages for the web UI."""
+        return [{"role": m["role"], "content": m["content"]} for m in self._messages]
     
     def add_user_message(self, text: str) -> None:
         """Add a user message to the history."""
@@ -168,6 +288,62 @@ class ConversationHistory:
         return len(self._messages) // 2
 
 
+# ─── API Key Helpers (multi-key fallback) ────────────────────────────────────
+
+def get_gemini_api_keys() -> List[str]:
+    """Collect Gemini API keys from env (supports comma-separated list and numbered keys)."""
+    keys: List[str] = []
+    multi = os.environ.get("GEMINI_API_KEYS") or os.environ.get("GOOGLE_API_KEYS")
+    if multi:
+        keys.extend(k.strip() for k in multi.split(",") if k.strip())
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GEMINI_API_KEY_4"):
+        val = os.environ.get(name)
+        if val and val not in keys:
+            keys.append(val.strip())
+    return keys
+
+
+def get_openai_api_keys() -> List[str]:
+    """Collect OpenAI API keys from env."""
+    keys: List[str] = []
+    multi = os.environ.get("OPENAI_API_KEYS")
+    if multi:
+        keys.extend(k.strip() for k in multi.split(",") if k.strip())
+    for name in ("OPENAI_API_KEY", "OPENAI_API_KEY_2", "OPENAI_API_KEY_3"):
+        val = os.environ.get(name)
+        if val and val not in keys:
+            keys.append(val.strip())
+    return keys
+
+
+def normalize_explanation_style(style: Optional[str]) -> str:
+    if not style:
+        return "auto"
+    key = style.lower().strip().replace("-", "_").replace(" ", "_")
+    return EXPLANATION_STYLE_ALIASES.get(key, key if key in EXPLANATION_STYLES else "auto")
+
+
+def detect_explanation_style_from_text(text: str) -> Optional[str]:
+    """Detect if the user is asking for a specific explanation style."""
+    lower = text.lower()
+    for style, phrases in STYLE_TRIGGER_PHRASES.items():
+        if any(p in lower for p in phrases):
+            return style
+    return None
+
+
+def style_display_name(style: str) -> str:
+    names = {
+        "auto": "Auto",
+        "simple": "Explain like I'm 10",
+        "college": "College student",
+        "math": "Mathematical",
+        "visual": "Visual",
+        "analogy": "Analogy",
+    }
+    return names.get(normalize_explanation_style(style), style)
+
+
 # ─── OpenAI Backend ───────────────────────────────────────────────────────────
 
 def _query_openai(
@@ -176,6 +352,8 @@ def _query_openai(
     model: str = DEFAULT_OPENAI_MODEL,
     temperature: float = 0.7,   # 0 = deterministic, 1 = creative
     max_tokens: int = 1024,     # Limit response length
+    dsp_context: Optional[str] = None,
+    is_followup: bool = False,
 ) -> str:
     """
     Send a query to the OpenAI API and get a response.
@@ -206,56 +384,53 @@ def _query_openai(
             "     Run: pip install openai"
         )
     
-    # Get API key from environment variable (never hardcode keys!)
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
+    # Get API keys (try multiple for reliability)
+    api_keys = get_openai_api_keys()
+    if not api_keys:
         raise ValueError(
             "[AI] OPENAI_API_KEY environment variable not set.\n"
             "     Set it with: $env:OPENAI_API_KEY = 'sk-...'\n"
+            "     Or multiple: $env:OPENAI_API_KEYS = 'sk-1,sk-2'\n"
             "     Get a key at: https://platform.openai.com/api-keys"
         )
     
-    # Initialize the OpenAI client
-    client = OpenAI(api_key=api_key)
-    
-    # Add user message to history before sending
+    # Store plain transcript in history; enrich only for this API call
     history.add_user_message(user_text)
     messages = history.get_openai_messages()
+    if dsp_context:
+        messages[-1]["content"] = _compose_user_message(user_text, dsp_context, is_followup=is_followup)
     
     print(f"[AI] 🤖 Querying OpenAI ({model})...")
     start_time = time.time()
-    
-    try:
-        # Make the API call
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,          # Full conversation history
-            temperature=temperature,    # Response randomness
-            max_tokens=max_tokens,      # Response length limit
-        )
-        
-        elapsed = time.time() - start_time
-        
-        # Extract the response text
-        # response.choices is a list (usually 1 choice)
-        ai_text = response.choices[0].message.content.strip()
-        
-        # Log usage info (helpful for monitoring costs)
-        usage = response.usage
-        print(f"[AI] ✅ Response received in {elapsed:.2f}s")
-        print(f"[AI]    Tokens used: {usage.prompt_tokens} prompt + "
-              f"{usage.completion_tokens} completion = {usage.total_tokens} total")
-        
-        # Add AI response to history for next turn
-        history.add_assistant_message(ai_text)
-        
-        return ai_text
-    
-    except Exception as e:
-        # Remove the user message we added (since we didn't get a response)
-        history._messages.pop()
-        print(f"[AI] ❌ OpenAI API error: {e}")
-        raise
+    last_error = None
+
+    for i, api_key in enumerate(api_keys):
+        try:
+            client = OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            elapsed = time.time() - start_time
+            ai_text = response.choices[0].message.content.strip()
+            usage = response.usage
+            key_label = f"key #{i + 1}" if len(api_keys) > 1 else "primary key"
+            print(f"[AI] ✅ Response received in {elapsed:.2f}s ({key_label})")
+            print(f"[AI]    Tokens used: {usage.prompt_tokens} prompt + "
+                  f"{usage.completion_tokens} completion = {usage.total_tokens} total")
+            history.add_assistant_message(ai_text)
+            return ai_text
+        except Exception as e:
+            last_error = e
+            print(f"[AI] ⚠️ OpenAI key #{i + 1} failed: {e}")
+            if i < len(api_keys) - 1:
+                time.sleep(0.5)
+
+    history._messages.pop()
+    print(f"[AI] ❌ OpenAI API error (all keys exhausted): {last_error}")
+    raise last_error
 
 
 # ─── Google Gemini Backend ────────────────────────────────────────────────────
@@ -266,6 +441,8 @@ def _query_gemini(
     model: str = DEFAULT_GEMINI_MODEL,
     temperature: float = 0.7,
     max_tokens: int = 1024,
+    dsp_context: Optional[str] = None,
+    is_followup: bool = False,
 ) -> str:
     """
     Send a query to Google's Gemini API and get a response.
@@ -296,66 +473,57 @@ def _query_gemini(
             "     Run: pip install google-generativeai"
         )
     
-    # Get API key from environment variable
-    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
+    # Get API keys (try multiple for reliability)
+    api_keys = get_gemini_api_keys()
+    if not api_keys:
         raise ValueError(
             "[AI] GEMINI_API_KEY environment variable not set.\n"
             "     Set it with: $env:GEMINI_API_KEY = 'AIza...'\n"
+            "     Or multiple: $env:GEMINI_API_KEYS = 'key1,key2,key3'\n"
             "     Get a free key at: https://aistudio.google.com/app/apikey"
         )
     
-    # Configure the API key
-    genai.configure(api_key=api_key)
-    
-    # Add user message to history
+    # Store plain transcript in history; enrich only for this API call
     history.add_user_message(user_text)
+    message_to_send = _compose_user_message(user_text, dsp_context, is_followup=is_followup)
     
     print(f"[AI] 🤖 Querying Gemini ({model})...")
     start_time = time.time()
-    
-    try:
-        # Initialize the model with generation config
-        gemini_model = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=history.system_prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-            ),
-        )
-        
-        # Build chat history in Gemini format (exclude the last user message
-        # since we'll send it via send_message)
-        chat_history = []
-        for msg in history._messages[:-1]:  # All except last (current user msg)
-            role = "model" if msg["role"] == "assistant" else "user"
-            chat_history.append({
-                "role": role,
-                "parts": [msg["content"]]
-            })
-        
-        # Start a chat session with history
-        chat = gemini_model.start_chat(history=chat_history)
-        
-        # Send the current message
-        response = chat.send_message(user_text)
-        
-        elapsed = time.time() - start_time
-        ai_text = response.text.strip()
-        
-        print(f"[AI] ✅ Response received in {elapsed:.2f}s")
-        
-        # Add AI response to history
-        history.add_assistant_message(ai_text)
-        
-        return ai_text
-    
-    except Exception as e:
-        # Remove the user message we added
-        history._messages.pop()
-        print(f"[AI] ❌ Gemini API error: {e}")
-        raise
+    last_error = None
+
+    chat_history = []
+    for msg in history._messages[:-1]:
+        role = "model" if msg["role"] == "assistant" else "user"
+        chat_history.append({"role": role, "parts": [msg["content"]]})
+
+    for i, api_key in enumerate(api_keys):
+        try:
+            genai.configure(api_key=api_key)
+            gemini_model = genai.GenerativeModel(
+                model_name=model,
+                system_instruction=history.system_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            chat = gemini_model.start_chat(history=chat_history)
+            response = chat.send_message(message_to_send)
+            elapsed = time.time() - start_time
+            ai_text = response.text.strip()
+            key_label = f"key #{i + 1}" if len(api_keys) > 1 else "primary key"
+            print(f"[AI] ✅ Response received in {elapsed:.2f}s ({key_label})")
+            history.add_assistant_message(ai_text)
+            return ai_text
+        except Exception as e:
+            last_error = e
+            print(f"[AI] ⚠️ Gemini key #{i + 1} failed: {e}")
+            if i < len(api_keys) - 1:
+                time.sleep(0.5)
+
+    history._messages.pop()
+    print(f"[AI] ❌ Gemini API error (all keys exhausted): {last_error}")
+    raise last_error
 
 
 # ─── Wake Word Detection ──────────────────────────────────────────────────────
@@ -409,6 +577,102 @@ def check_wake_word(
     return False
 
 
+# ─── DSP Context Builder ─────────────────────────────────────────────────────
+
+def build_dsp_context(
+    turn: int,
+    pipeline_info: dict,
+    feature_summary: dict,
+    cnn14_predictions: Optional[List[Dict]] = None,
+    freq_importance: Optional[Dict] = None,
+    waveform_stats: Optional[Dict] = None,
+    rf_importances: Optional[Dict] = None,
+) -> str:
+    """
+    Build a structured text summary of DSP pipeline results for the LLM.
+    All analysis modules run before this is sent to the AI.
+    """
+    lines = [
+        f"[DSP ANALYSIS CONTEXT — Turn {turn}]",
+        "The following was computed from the user's audio BEFORE this message:",
+        "",
+        "Pipeline decision:",
+        f"  Filter applied     : {pipeline_info.get('filter', 'none').upper()}",
+        f"  FFT size           : {pipeline_info.get('fft_size', '—')} samples",
+        f"  Feature set        : {pipeline_info.get('feature_set', '—').upper()}",
+        f"  Decision rule      : {pipeline_info.get('rule', 'random_forest')}",
+        f"  Processing time    : {pipeline_info.get('elapsed_ms', 0):.1f} ms",
+        "",
+        "Acoustic features (from waveform analysis):",
+        f"  SNR                : {feature_summary.get('snr_db', 0):.2f} dB",
+        f"  Noise floor        : {feature_summary.get('noise_level', feature_summary.get('noise_level_db', 0)):.2f} dB",
+        f"  Zero crossing rate : {feature_summary.get('zero_crossing_rate', 0):.4f}",
+        f"  Dominant frequency : {feature_summary.get('dominant_frequency', feature_summary.get('dominant_freq_hz', 0)):.1f} Hz",
+        f"  Spectral centroid  : {feature_summary.get('spectral_centroid', feature_summary.get('spectral_centroid_hz', 0)):.1f} Hz",
+        f"  Bandwidth          : {feature_summary.get('bandwidth', feature_summary.get('bandwidth_hz', 0)):.1f} Hz",
+    ]
+
+    if waveform_stats:
+        lines.extend([
+            "",
+            "Waveform summary:",
+            f"  Duration           : {waveform_stats.get('duration_s', 0):.2f} s",
+            f"  Sample rate        : {waveform_stats.get('sample_rate_hz', 0)} Hz",
+            f"  Raw peak amplitude : {waveform_stats.get('raw_peak', 0):.4f}",
+            f"  Filtered peak      : {waveform_stats.get('filtered_peak', 0):.4f}",
+            f"  Raw RMS level      : {waveform_stats.get('raw_rms', 0):.4f}",
+            f"  Filtered RMS level : {waveform_stats.get('filtered_rms', 0):.4f}",
+        ])
+        if waveform_stats.get("peak_reduction_pct") is not None:
+            lines.append(
+                f"  Peak change (filt) : {waveform_stats['peak_reduction_pct']:+.1f}% vs raw"
+            )
+
+    if rf_importances:
+        top_rf = sorted(rf_importances.items(), key=lambda x: x[1], reverse=True)[:4]
+        lines.extend(["", "Top RF feature importances (filter decision):"])
+        for name, weight in top_rf:
+            lines.append(f"  {name.replace('_', ' ')}: {weight:.3f}")
+
+    if cnn14_predictions:
+        lines.extend(["", "CNN14 environment classification (top predictions):"])
+        for pred in cnn14_predictions[:3]:
+            label = pred.get("label", "Unknown")
+            prob = pred.get("probability", 0)
+            lines.append(f"  {label}: {prob:.1%}")
+
+    if freq_importance:
+        top_bands = freq_importance.get("top_frequencies", [])
+        if top_bands:
+            bands = ", ".join(f"{b['freq']:.0f} Hz" for b in top_bands[:5])
+            lines.extend(["", f"SHAP top frequency bands driving filter choice: {bands}"])
+
+    lines.extend([
+        "",
+        "Use this context to explain waveforms, spectra, filters, and audio quality when the user asks.",
+        "When asked about applications, connect metrics to real uses (calls, hearing aids, music, speech AI, sonar, etc.).",
+    ])
+    return "\n".join(lines)
+
+
+def build_followup_context(dsp_context: str) -> str:
+    """Wrap prior DSP analysis for follow-up text chat (no new audio)."""
+    return (
+        "[REFERENCE — DSP ANALYSIS FROM LAST AUDIO TURN]\n"
+        f"{dsp_context.strip()}\n\n"
+        "This is reference data from the user's most recent recording. "
+        "Use it to answer follow-up questions; do not claim you re-ran the pipeline."
+    )
+
+
+def _compose_user_message(user_text: str, dsp_context: Optional[str], is_followup: bool = False) -> str:
+    """Combine DSP analysis context with the user's message for the LLM."""
+    if not dsp_context:
+        return user_text.strip()
+    context_block = build_followup_context(dsp_context) if is_followup else dsp_context.strip()
+    return f"{context_block}\n\n[USER MESSAGE]\n{user_text.strip()}"
+
+
 # ─── Main Query Function (Public API) ─────────────────────────────────────────
 
 def query_ai(
@@ -417,7 +681,10 @@ def query_ai(
     backend: str = DEFAULT_BACKEND,
     model: Optional[str] = None,
     temperature: float = 0.7,
-    max_tokens: int = 1024,
+    max_tokens: int = 1536,
+    dsp_context: Optional[str] = None,
+    explanation_style: Optional[str] = None,
+    is_followup: bool = False,
 ) -> str:
     """
     Send user text to the configured AI backend and return the response.
@@ -433,6 +700,9 @@ def query_ai(
     model       : str or None - Override the default model
     temperature : float - Response creativity (0=deterministic, 1=creative)
     max_tokens  : int - Max response length in tokens
+    dsp_context : str or None - DSP pipeline analysis summary prepended to the user message
+    explanation_style : str or None - Override explanation style (auto, simple, college, math, visual, analogy)
+    is_followup : bool - True for text follow-ups using reference DSP context from last audio turn
 
     Returns:
     --------
@@ -445,20 +715,36 @@ def query_ai(
     """
     if not user_text.strip():
         return "I didn't catch that — could you please repeat?"
+
+    # Auto-detect style from user message (e.g. "explain like I'm 10")
+    detected = detect_explanation_style_from_text(user_text)
+    if detected:
+        history.set_explanation_style(detected)
+    elif explanation_style:
+        history.set_explanation_style(explanation_style)
     
-    print(f"\n[AI] 📤 User said: \"{user_text}\"")
+    print(f"\n[AI] 📤 User said: \"{user_text[:120]}{'...' if len(user_text) > 120 else ''}\"")
     print(f"[AI]    Backend: {backend.upper()}")
+    print(f"[AI]    Style: {style_display_name(history.explanation_style)}")
     print(f"[AI]    Conversation turn: {history.turn_count + 1}")
-    
+    if dsp_context:
+        print(f"[AI]    DSP context attached ({len(dsp_context)} chars, followup={is_followup})")
+
     backend = backend.lower().strip()
     
     if backend == "openai":
         chosen_model = model or DEFAULT_OPENAI_MODEL
-        return _query_openai(user_text, history, chosen_model, temperature, max_tokens)
+        return _query_openai(
+            user_text, history, chosen_model, temperature, max_tokens,
+            dsp_context, is_followup,
+        )
     
     elif backend in ("gemini", "google"):
         chosen_model = model or DEFAULT_GEMINI_MODEL
-        return _query_gemini(user_text, history, chosen_model, temperature, max_tokens)
+        return _query_gemini(
+            user_text, history, chosen_model, temperature, max_tokens,
+            dsp_context, is_followup,
+        )
     
     else:
         raise ValueError(
@@ -490,6 +776,20 @@ def handle_special_commands(text: str, history: ConversationHistory) -> Optional
     """
     text_lower = text.lower().strip()
     
+    # Style switch commands (no API call)
+    style_commands = {
+        "simple": ["explain like i'm 10", "explain like i am 10", "use simple mode", "kid mode"],
+        "college": ["college mode", "college student mode"],
+        "math": ["math mode", "mathematical mode"],
+        "visual": ["visual mode", "visual explanation mode"],
+        "analogy": ["analogy mode", "use analogies"],
+        "auto": ["auto mode", "normal mode", "default mode"],
+    }
+    for style, phrases in style_commands.items():
+        if any(p in text_lower for p in phrases) and len(text_lower.split()) <= 8:
+            history.set_explanation_style(style)
+            return f"Got it! I'll explain things using {style_display_name(style)} style from now on."
+
     # Clear history commands
     if any(cmd in text_lower for cmd in ["clear history", "forget everything", "start over", "reset"]):
         history.clear()
