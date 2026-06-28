@@ -15,8 +15,29 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-# Load environment variables
-from dashboard import load_env_file
+def load_env_file():
+    """Load key-value pairs from .env into os.environ (if not already set)."""
+    env_paths = [Path(".env"), BASE_DIR / ".env", BASE_DIR.parent / ".env"]
+    for env_path in env_paths:
+        if env_path.exists() and env_path.is_file():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if "=" in line:
+                            key, val = line.split("=", 1)
+                            key, val = key.strip(), val.strip()
+                            if val.startswith(('"', "'")) and val.endswith(val[0]):
+                                val = val[1:-1]
+                            if key and key not in os.environ:
+                                os.environ[key] = val
+                print(f"[Server] Loaded environment from {env_path}")
+                break
+            except Exception as e:
+                print(f"[Server] Warning: Could not read {env_path}: {e}")
+
 load_env_file()
 
 # ── Create FastAPI App ─────────────────────────────────────────

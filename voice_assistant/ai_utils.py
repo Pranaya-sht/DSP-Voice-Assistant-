@@ -113,6 +113,35 @@ STYLE_TRIGGER_PHRASES: Dict[str, List[str]] = {
     ],
 }
 
+
+def normalize_explanation_style(style: Optional[str]) -> str:
+    if not style:
+        return "auto"
+    key = style.lower().strip().replace("-", "_").replace(" ", "_")
+    return EXPLANATION_STYLE_ALIASES.get(key, key if key in EXPLANATION_STYLES else "auto")
+
+
+def detect_explanation_style_from_text(text: str) -> Optional[str]:
+    """Detect if the user is asking for a specific explanation style."""
+    lower = text.lower()
+    for style, phrases in STYLE_TRIGGER_PHRASES.items():
+        if any(p in lower for p in phrases):
+            return style
+    return None
+
+
+def style_display_name(style: str) -> str:
+    names = {
+        "auto": "Auto",
+        "simple": "Explain like I'm 10",
+        "college": "College student",
+        "math": "Mathematical",
+        "visual": "Visual",
+        "analogy": "Analogy",
+    }
+    return names.get(normalize_explanation_style(style), style)
+
+
 BASE_SYSTEM_PROMPT: str = """You are a voice-first AI assistant that is BOTH a friendly general chatbot AND a digital signal processing (DSP) expert.
 
 Your dual role:
@@ -314,34 +343,6 @@ def get_openai_api_keys() -> List[str]:
         if val and val not in keys:
             keys.append(val.strip())
     return keys
-
-
-def normalize_explanation_style(style: Optional[str]) -> str:
-    if not style:
-        return "auto"
-    key = style.lower().strip().replace("-", "_").replace(" ", "_")
-    return EXPLANATION_STYLE_ALIASES.get(key, key if key in EXPLANATION_STYLES else "auto")
-
-
-def detect_explanation_style_from_text(text: str) -> Optional[str]:
-    """Detect if the user is asking for a specific explanation style."""
-    lower = text.lower()
-    for style, phrases in STYLE_TRIGGER_PHRASES.items():
-        if any(p in lower for p in phrases):
-            return style
-    return None
-
-
-def style_display_name(style: str) -> str:
-    names = {
-        "auto": "Auto",
-        "simple": "Explain like I'm 10",
-        "college": "College student",
-        "math": "Mathematical",
-        "visual": "Visual",
-        "analogy": "Analogy",
-    }
-    return names.get(normalize_explanation_style(style), style)
 
 
 # ─── OpenAI Backend ───────────────────────────────────────────────────────────
