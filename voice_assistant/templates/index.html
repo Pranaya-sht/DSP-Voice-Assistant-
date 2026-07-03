@@ -422,6 +422,50 @@
             line-height: 1.4;
         }
 
+        .audio-compare-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        @media (max-width: 900px) {
+            .audio-compare-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .audio-compare-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        .audio-compare-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-muted);
+        }
+
+        .audio-compare-card.highlight {
+            border-color: var(--success);
+            box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+        }
+
+        .audio-download-link {
+            font-size: 0.75rem;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .audio-download-link:hover {
+            text-decoration: underline;
+        }
+
         .audio-playback {
             margin-top: auto;
             width: 100%;
@@ -835,6 +879,20 @@
                 </div>
             </div>
 
+            <!-- Cleaned vs original audio -->
+            <div class="audio-compare-row">
+                <div class="audio-compare-card">
+                    <div class="audio-compare-title">🎙️ Original Recording</div>
+                    <audio id="raw-audio-player" class="audio-playback" controls style="display: none;"></audio>
+                    <a id="raw-audio-download" class="audio-download-link" href="#" download style="display: none;">Download original WAV</a>
+                </div>
+                <div class="audio-compare-card highlight">
+                    <div class="audio-compare-title">✨ Cleaned Audio (DSP filtered)</div>
+                    <audio id="filtered-audio-player" class="audio-playback" controls style="display: none;"></audio>
+                    <a id="filtered-audio-download" class="audio-download-link" href="#" download style="display: none;">Download cleaned WAV</a>
+                </div>
+            </div>
+
             <!-- Conversation panel -->
             <div class="chat-panel">
                 <div class="chart-header-row">
@@ -1074,6 +1132,50 @@
                 <strong>Environment:</strong> ${cnn} &nbsp;|&nbsp;
                 <strong>Feature set:</strong> ${(p.feature_set || '—').toUpperCase()}
             `;
+        }
+
+        function renderAudioPlayers(state) {
+            const rawPlayer = document.getElementById('raw-audio-player');
+            const filtPlayer = document.getElementById('filtered-audio-player');
+            const rawDl = document.getElementById('raw-audio-download');
+            const filtDl = document.getElementById('filtered-audio-download');
+
+            if (state.raw_audio_url) {
+                rawPlayer.src = state.raw_audio_url + '?t=' + Date.now();
+                rawPlayer.style.display = 'block';
+                rawDl.href = state.raw_audio_url;
+                rawDl.style.display = 'inline';
+            } else {
+                rawPlayer.style.display = 'none';
+                rawDl.style.display = 'none';
+            }
+
+            if (state.filtered_audio_url) {
+                filtPlayer.src = state.filtered_audio_url + '?t=' + Date.now();
+                filtPlayer.style.display = 'block';
+                filtDl.href = state.filtered_audio_url;
+                filtDl.style.display = 'inline';
+            } else {
+                filtPlayer.style.display = 'none';
+                filtDl.style.display = 'none';
+            }
+        }
+
+        async function pollForPlots(turn, attempts = 15) {
+            for (let i = 0; i < attempts; i++) {
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const res = await fetch('/api/state');
+                    const state = await res.json();
+                    if (state.turn === turn && state.plot_urls && Object.keys(state.plot_urls).length > 0) {
+                        renderTurnPlots(state.plot_urls, turn);
+                        refreshPlotGallery(turn);
+                        return;
+                    }
+                } catch (e) {
+                    console.warn('Plot poll failed', e);
+                }
+            }
         }
 
         async function sendChatMessage() {
@@ -1339,7 +1441,9 @@
                 updateStyleBadge(state.explanation_style_label);
             }
 
-            // TTS player (voice turns only)
+            renderAudioPlayers(state);
+
+            // TTS player (voice response)
             const player = document.getElementById('tts-audio-player');
             if (state.tts_audio_url) {
                 player.src = state.tts_audio_url;
@@ -1359,6 +1463,9 @@
             // Show turn-specific saved plot images from voice_assistant/plots
             renderTurnPlots(state.plot_urls, state.turn);
             refreshPlotGallery(state.turn);
+            if (state.turn && (!state.plot_urls || Object.keys(state.plot_urls).length === 0)) {
+                pollForPlots(state.turn);
+            }
         }
 
         function renderCNN14Panel(predictions) {

@@ -3,6 +3,7 @@ import os
 import time
 import json
 import traceback
+import asyncio
 from pathlib import Path
 import numpy as np
 
@@ -49,15 +50,25 @@ app = FastAPI(
 # Ensure folders exist
 TEMP_AUDIO_DIR = BASE_DIR / "temp_audio"
 DASHBOARD_STATE_DIR = BASE_DIR / "dashboard_state"
+RECORDINGS_DIR = BASE_DIR / "recordings"
 TEST_DIR = BASE_DIR / "test"
 PLOTS_DIR = BASE_DIR / "plots"
 
 TEMP_AUDIO_DIR.mkdir(exist_ok=True, parents=True)
 DASHBOARD_STATE_DIR.mkdir(exist_ok=True, parents=True)
+RECORDINGS_DIR.mkdir(exist_ok=True, parents=True)
 PLOTS_DIR.mkdir(exist_ok=True, parents=True)
+
+# Performance tuning (FAST_PIPELINE=1 by default on Spaces CPU)
+FAST_PIPELINE = os.environ.get("FAST_PIPELINE", "1").lower() in ("1", "true", "yes")
+WHISPER_MODEL_SIZE = os.environ.get("WHISPER_MODEL", "tiny" if FAST_PIPELINE else "base")
+WHISPER_BEAM_SIZE = int(os.environ.get("WHISPER_BEAM_SIZE", "1" if FAST_PIPELINE else "5"))
+SKIP_CNN14 = os.environ.get("SKIP_CNN14", "1" if FAST_PIPELINE else "0").lower() in ("1", "true", "yes")
+VOICE_AI_MAX_TOKENS = int(os.environ.get("VOICE_AI_MAX_TOKENS", "768" if FAST_PIPELINE else "1536"))
 
 # Mount static audio assets for web playback
 app.mount("/audio/tts", StaticFiles(directory=str(TEMP_AUDIO_DIR)), name="tts")
+app.mount("/audio/recordings", StaticFiles(directory=str(RECORDINGS_DIR)), name="recordings")
 app.mount("/plots", StaticFiles(directory=str(PLOTS_DIR)), name="plots")
 if TEST_DIR.exists():
     app.mount("/audio/test", StaticFiles(directory=str(TEST_DIR)), name="test")
@@ -75,9 +86,10 @@ def startup_event():
     """Load Faster-Whisper and DSP Decision Engine models at server startup to ensure instant turn processing."""
     global whisper_model, dsp_engine, history, turn_count
     
-    print("[Server] Initializing Whisper model (base, CPU, int8)...")
+    print(f"[Server] Initializing Whisper model ({WHISPER_MODEL_SIZE}, CPU, int8, beam={WHISPER_BEAM_SIZE})...")
     from faster_whisper import WhisperModel
-    whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+    whisper_model = WhisperModel(WHISPER_MODEL_SIZE, device="cpu", compute_type="int8")
+    print(f"[Server] Fast pipeline: {FAST_PIPELINE} | Skip CNN14: {SKIP_CNN14}")
     
     print("[Server] Loading DSP Decision Engine...")
     from decision_engine import DSPDecisionEngine
@@ -141,6 +153,8 @@ def generate_turn_plots(
     dsp_engine=None,
     dsp_params: dict | None = None,
     cnn14_preds: list | None = None,
+    include_combined: bool = True,
+    include_xai: bool = True,
 ) -> dict:
     """Generate publication-quality matplotlib PNG plots and save to plots/ directory.
     Returns dict of plot URLs for the frontend."""
@@ -249,55 +263,56 @@ def generate_turn_plots(
         print(f'[Plots] SHAP plot error: {e}')
 
     # ── 4. Combined Analysis Plot (all 3 in one) ─────────────────
-    try:
-        fig, axes = plt.subplots(3, 1, figsize=(14, 12), dpi=150)
-        # Waveform
-        raw = wf.get('raw', [])
-        filtered = wf.get('filtered', [])
-        if raw:
-            axes[0].plot(raw, color='#71717a', linewidth=0.5, alpha=0.6, label='Raw')
-        if filtered:
-            axes[0].plot(filtered, color='#3b82f6', linewidth=0.7, label='Filtered')
-        axes[0].set_title('Waveform Comparison', fontsize=11, fontweight='bold')
-        axes[0].set_xlabel('Samples')
-        axes[0].legend(loc='upper right', framealpha=0.3, fontsize=8)
-        axes[0].grid(True, axis='y')
-        # FFT
-        freqs = fft_data.get('frequencies', [])
-        raw_mag = fft_data.get('raw_magnitude', [])
-        filt_mag = fft_data.get('filtered_magnitude', [])
-        if freqs and raw_mag:
-            axes[1].plot(freqs, raw_mag, color='#ef4444', linewidth=0.7, alpha=0.6, label='Raw FFT')
-        if freqs and filt_mag:
-            axes[1].plot(freqs, filt_mag, color='#10b981', linewidth=0.7, label='Filtered FFT')
-        axes[1].set_title('FFT Spectrum', fontsize=11, fontweight='bold')
-        axes[1].set_xlabel('Frequency (Hz)')
-        axes[1].legend(loc='upper right', framealpha=0.3, fontsize=8)
-        axes[1].grid(True, axis='y')
-        # SHAP
-        shap_freqs = shap_data.get('frequencies', [])
-        shap_vals = shap_data.get('importance', [])
-        if shap_freqs and shap_vals:
-            colors = ['#10b981' if v >= 0 else '#ef4444' for v in shap_vals]
-            axes[2].bar(range(len(shap_vals)), shap_vals, color=colors, width=1.0)
-            axes[2].set_title('SHAP Frequency Importance', fontsize=11, fontweight='bold')
-            axes[2].set_xlabel('Frequency Band')
-            axes[2].axhline(y=0, color='#52525b', linewidth=0.5)
-        else:
-            axes[2].text(0.5, 0.5, 'No SHAP data', ha='center', va='center', color='#71717a', fontsize=12, transform=axes[2].transAxes)
-        axes[2].grid(True, axis='y')
-        fig.suptitle(f'DSP Pipeline — Turn {turn:03d} Analysis', fontsize=14, fontweight='bold', y=0.98)
-        fig.tight_layout(rect=[0, 0, 1, 0.96])
-        fname = f'turn_{turn:03d}_analysis.png'
-        fig.savefig(str(PLOTS_DIR / fname), bbox_inches='tight')
-        plt.close(fig)
-        plot_urls['combined_plot'] = f'/plots/{fname}'
-        print(f'[Plots] Saved combined analysis: {fname}')
-    except Exception as e:
-        print(f'[Plots] Combined plot error: {e}')
+    if include_combined:
+        try:
+            fig, axes = plt.subplots(3, 1, figsize=(14, 12), dpi=150)
+            # Waveform
+            raw = wf.get('raw', [])
+            filtered = wf.get('filtered', [])
+            if raw:
+                axes[0].plot(raw, color='#71717a', linewidth=0.5, alpha=0.6, label='Raw')
+            if filtered:
+                axes[0].plot(filtered, color='#3b82f6', linewidth=0.7, label='Filtered')
+            axes[0].set_title('Waveform Comparison', fontsize=11, fontweight='bold')
+            axes[0].set_xlabel('Samples')
+            axes[0].legend(loc='upper right', framealpha=0.3, fontsize=8)
+            axes[0].grid(True, axis='y')
+            # FFT
+            freqs = fft_data.get('frequencies', [])
+            raw_mag = fft_data.get('raw_magnitude', [])
+            filt_mag = fft_data.get('filtered_magnitude', [])
+            if freqs and raw_mag:
+                axes[1].plot(freqs, raw_mag, color='#ef4444', linewidth=0.7, alpha=0.6, label='Raw FFT')
+            if freqs and filt_mag:
+                axes[1].plot(freqs, filt_mag, color='#10b981', linewidth=0.7, label='Filtered FFT')
+            axes[1].set_title('FFT Spectrum', fontsize=11, fontweight='bold')
+            axes[1].set_xlabel('Frequency (Hz)')
+            axes[1].legend(loc='upper right', framealpha=0.3, fontsize=8)
+            axes[1].grid(True, axis='y')
+            # SHAP
+            shap_freqs = shap_data.get('frequencies', [])
+            shap_vals = shap_data.get('importance', [])
+            if shap_freqs and shap_vals:
+                colors = ['#10b981' if v >= 0 else '#ef4444' for v in shap_vals]
+                axes[2].bar(range(len(shap_vals)), shap_vals, color=colors, width=1.0)
+                axes[2].set_title('SHAP Frequency Importance', fontsize=11, fontweight='bold')
+                axes[2].set_xlabel('Frequency Band')
+                axes[2].axhline(y=0, color='#52525b', linewidth=0.5)
+            else:
+                axes[2].text(0.5, 0.5, 'No SHAP data', ha='center', va='center', color='#71717a', fontsize=12, transform=axes[2].transAxes)
+            axes[2].grid(True, axis='y')
+            fig.suptitle(f'DSP Pipeline — Turn {turn:03d} Analysis', fontsize=14, fontweight='bold', y=0.98)
+            fig.tight_layout(rect=[0, 0, 1, 0.96])
+            fname = f'turn_{turn:03d}_analysis.png'
+            fig.savefig(str(PLOTS_DIR / fname), bbox_inches='tight')
+            plt.close(fig)
+            plot_urls['combined_plot'] = f'/plots/{fname}'
+            print(f'[Plots] Saved combined analysis: {fname}')
+        except Exception as e:
+            print(f'[Plots] Combined plot error: {e}')
 
     # ── 5. XAI Explainability Dashboard (RF + SHAP + CNN14 + DSP summary) ──
-    if dsp_engine is not None and dsp_params is not None:
+    if include_xai and dsp_engine is not None and dsp_params is not None:
         try:
             from explainability import plot_explainability_dashboard
             rf_importance = dsp_engine.get_feature_importances()
@@ -316,6 +331,36 @@ def generate_turn_plots(
             print(f"[Plots] XAI plot error: {e}")
 
     return plot_urls
+
+
+async def _generate_plots_background(
+    turn: int,
+    state: dict,
+    dsp_engine,
+    dsp_params: dict,
+    cnn14_preds: list,
+) -> None:
+    """Generate PNG plots in a thread so the HTTP response returns faster."""
+    loop = asyncio.get_running_loop()
+    try:
+        plot_urls = await loop.run_in_executor(
+            None,
+            lambda: generate_turn_plots(
+                turn,
+                state,
+                dsp_engine=dsp_engine,
+                dsp_params=dsp_params,
+                cnn14_preds=cnn14_preds,
+                include_combined=not FAST_PIPELINE,
+                include_xai=not FAST_PIPELINE,
+            ),
+        )
+        state["plot_urls"] = plot_urls
+        state["plots_ready"] = True
+        persist_turn_state(state)
+        print(f"[Plots] Background plot generation complete for turn {turn}")
+    except Exception as e:
+        print(f"[Plots] Background plot generation failed: {e}")
 
 async def synthesize_tts(text: str) -> str | None:
     """Generate TTS audio and return its URL path."""
@@ -338,6 +383,7 @@ async def ask_assistant(
     explanation_style: str = "auto",
     is_followup: bool = False,
     with_tts: bool = False,
+    max_tokens: int | None = None,
 ) -> dict:
     """Query the LLM with optional DSP context and return response payload."""
     global history, latest_dsp_context, ai_backend
@@ -356,12 +402,13 @@ async def ask_assistant(
         }
 
     ctx = dsp_context if dsp_context is not None else (latest_dsp_context if is_followup else None)
+    token_limit = max_tokens if max_tokens is not None else (1536 if is_followup else VOICE_AI_MAX_TOKENS)
     try:
         ai_response = query_ai(
             user_text=user_text,
             history=history,
             backend=ai_backend,
-            max_tokens=1536,
+            max_tokens=token_limit,
             dsp_context=ctx,
             explanation_style=explanation_style,
             is_followup=is_followup,
@@ -419,8 +466,12 @@ async def run_pipeline_on_audio(
     adaptive_result = run_adaptive_dsp(audio_normalized, sample_rate, dsp_params)
     filtered_audio = adaptive_result["filtered_audio"]
     
-    # 5. Environment classification (CNN14)
-    cnn14_preds = cnn14_classify(filtered_audio, sample_rate)
+    # 5. Environment classification (CNN14) — optional for speed
+    if SKIP_CNN14:
+        cnn14_preds = []
+        print("[Server] CNN14 skipped (SKIP_CNN14=1)")
+    else:
+        cnn14_preds = cnn14_classify(filtered_audio, sample_rate)
     
     # 6. SHAP Explainability
     try:
@@ -452,17 +503,19 @@ async def run_pipeline_on_audio(
         "peak_reduction_pct": peak_reduction_pct,
     }
         
-    # Save the filtered audio to a WAV file to feed to Whisper STT
-    wav_filename = f"turn_{turn:03d}_{int(time.time())}.wav"
-    recordings_dir = BASE_DIR / "recordings"
-    recordings_dir.mkdir(exist_ok=True)
-    wav_path = save_wav(filtered_audio, sample_rate, filename=str(recordings_dir / wav_filename))
+    # Save raw + cleaned audio for playback and Whisper STT
+    raw_filename = f"turn_{turn:03d}_raw.wav"
+    filtered_filename = f"turn_{turn:03d}_filtered.wav"
+    save_wav(audio_normalized, sample_rate, filename=str(RECORDINGS_DIR / raw_filename))
+    filtered_wav_path = save_wav(filtered_audio, sample_rate, filename=str(RECORDINGS_DIR / filtered_filename))
+    raw_audio_url = f"/audio/recordings/{raw_filename}"
+    filtered_audio_url = f"/audio/recordings/{filtered_filename}"
     
-    # 7. Transcription (Whisper)
+    # 7. Transcription (Whisper) — uses noise-cleaned audio
     segments, info = whisper_model.transcribe(
-        wav_path,
+        filtered_wav_path,
         language="en",
-        beam_size=5,
+        beam_size=WHISPER_BEAM_SIZE,
         vad_filter=True
     )
     user_text = " ".join([segment.text for segment in segments]).strip()
@@ -519,25 +572,21 @@ async def run_pipeline_on_audio(
         state = json.load(f)
         
     state["tts_audio_url"] = tts_audio_url
+    state["raw_audio_url"] = raw_audio_url
+    state["filtered_audio_url"] = filtered_audio_url
+    state["filter_applied"] = dsp_params.get("filter", "none")
     state["conversation"] = history.get_ui_messages() if history else []
     state["explanation_style"] = history.explanation_style if history else "auto"
     from ai_utils import style_display_name
     state["explanation_style_label"] = style_display_name(state["explanation_style"])
-    
-    # Generate and save matplotlib plots to plots/ directory
-    try:
-        plot_urls = generate_turn_plots(
-            turn,
-            state,
-            dsp_engine=dsp_engine,
-            dsp_params=dsp_params,
-            cnn14_preds=cnn14_preds,
-        )
-        state["plot_urls"] = plot_urls
-        persist_turn_state(state)
-    except Exception as e:
-        print(f"[Plots] Error generating plots: {e}")
-        state["plot_urls"] = get_plot_urls_for_turn(turn)
+    state["plot_urls"] = {}
+    state["plots_ready"] = False
+    persist_turn_state(state)
+
+    # Generate PNG plots in background so chat/audio return faster
+    asyncio.create_task(
+        _generate_plots_background(turn, state, dsp_engine, dsp_params, cnn14_preds)
+    )
     
     return state
 
