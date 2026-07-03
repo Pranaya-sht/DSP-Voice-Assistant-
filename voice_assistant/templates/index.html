@@ -1139,25 +1139,43 @@
             const filtPlayer = document.getElementById('filtered-audio-player');
             const rawDl = document.getElementById('raw-audio-download');
             const filtDl = document.getElementById('filtered-audio-download');
+            const filtCard = filtPlayer?.closest('.audio-compare-card');
 
-            if (state.raw_audio_url) {
-                rawPlayer.src = state.raw_audio_url + '?t=' + Date.now();
-                rawPlayer.style.display = 'block';
-                rawDl.href = state.raw_audio_url;
-                rawDl.style.display = 'inline';
-            } else {
-                rawPlayer.style.display = 'none';
-                rawDl.style.display = 'none';
-            }
+            const setPlayer = (player, dl, url, label) => {
+                if (!player) return;
+                player.onerror = () => {
+                    console.error(`Failed to load ${label}:`, url);
+                    player.style.display = 'none';
+                };
+                if (url) {
+                    player.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+                    player.style.display = 'block';
+                    player.load();
+                    if (dl) {
+                        dl.href = url;
+                        dl.style.display = 'inline';
+                    }
+                } else {
+                    player.removeAttribute('src');
+                    player.style.display = 'none';
+                    if (dl) dl.style.display = 'none';
+                }
+            };
 
-            if (state.filtered_audio_url) {
-                filtPlayer.src = state.filtered_audio_url + '?t=' + Date.now();
-                filtPlayer.style.display = 'block';
-                filtDl.href = state.filtered_audio_url;
-                filtDl.style.display = 'inline';
-            } else {
-                filtPlayer.style.display = 'none';
-                filtDl.style.display = 'none';
+            const rawUrl = state.raw_audio_url || (state.turn ? `/api/audio/turn/${state.turn}/raw` : null);
+            const filtUrl = state.filtered_audio_url || (state.turn ? `/api/audio/turn/${state.turn}/filtered` : null);
+
+            setPlayer(rawPlayer, rawDl, rawUrl, 'raw audio');
+            setPlayer(filtPlayer, filtDl, filtUrl, 'filtered audio');
+
+            if (filtCard && state.filter_applied) {
+                const label = filtCard.querySelector('.audio-compare-title');
+                if (label) {
+                    const f = (state.filter_applied || 'none').toUpperCase();
+                    label.textContent = f === 'NONE'
+                        ? '✨ Processed Audio (no filter applied)'
+                        : `✨ Cleaned Audio (${f} filter)`;
+                }
             }
         }
 
@@ -1308,7 +1326,7 @@
                             if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
                             const state = await res.json();
                             renderDashboard(state);
-                            await refreshState();
+                            // Don't re-fetch immediately — avoids race before persist; response already has audio URLs
                         } catch (err) {
                             alert("Failed to process microphone audio: " + err);
                         } finally {
@@ -1352,7 +1370,6 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
                 const state = await res.json();
                 renderDashboard(state);
-                await refreshState();
             } catch (err) {
                 alert("Failed to upload file: " + err);
             } finally {
@@ -1380,7 +1397,6 @@
                 if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
                 const state = await res.json();
                 renderDashboard(state);
-                await refreshState();
             } catch (err) {
                 alert("Error running test suite: " + err);
             } finally {

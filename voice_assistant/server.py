@@ -147,6 +147,35 @@ def persist_turn_state(state: dict) -> None:
         state_file.unlink()
     tmp.rename(state_file)
 
+
+def _recording_paths(turn: int) -> tuple[Path, Path]:
+    raw_path = RECORDINGS_DIR / f"turn_{turn:03d}_raw.wav"
+    filtered_path = RECORDINGS_DIR / f"turn_{turn:03d}_filtered.wav"
+    return raw_path, filtered_path
+
+
+def _audio_api_url(turn: int, kind: str) -> str:
+    """Use API route for reliable playback on Hugging Face Spaces."""
+    return f"/api/audio/turn/{turn}/{kind}"
+
+
+def save_turn_recordings(
+    turn: int,
+    raw_audio: np.ndarray,
+    filtered_audio: np.ndarray,
+    sample_rate: int,
+) -> tuple[str, str, str, str]:
+    """Save int16 WAVs and return (raw_path, filtered_path, raw_url, filtered_url)."""
+    from audio_utils import save_wav
+
+    raw_path, filtered_path = _recording_paths(turn)
+    save_wav(raw_audio, sample_rate, filename=str(raw_path))
+    save_wav(filtered_audio, sample_rate, filename=str(filtered_path))
+    raw_url = _audio_api_url(turn, "raw")
+    filtered_url = _audio_api_url(turn, "filtered")
+    print(f"[Server] Saved recordings: {filtered_path.name} ({filtered_path.stat().st_size} bytes)")
+    return str(raw_path), str(filtered_path), raw_url, filtered_url
+
 def generate_turn_plots(
     turn: int,
     state: dict,
@@ -504,12 +533,9 @@ async def run_pipeline_on_audio(
     }
         
     # Save raw + cleaned audio for playback and Whisper STT
-    raw_filename = f"turn_{turn:03d}_raw.wav"
-    filtered_filename = f"turn_{turn:03d}_filtered.wav"
-    save_wav(audio_normalized, sample_rate, filename=str(RECORDINGS_DIR / raw_filename))
-    filtered_wav_path = save_wav(filtered_audio, sample_rate, filename=str(RECORDINGS_DIR / filtered_filename))
-    raw_audio_url = f"/audio/recordings/{raw_filename}"
-    filtered_audio_url = f"/audio/recordings/{filtered_filename}"
+    raw_wav_path, filtered_wav_path, raw_audio_url, filtered_audio_url = save_turn_recordings(
+        turn, audio_normalized, filtered_audio, sample_rate
+    )
     
     # 7. Transcription (Whisper) — uses noise-cleaned audio
     segments, info = whisper_model.transcribe(
@@ -610,6 +636,12 @@ def get_latest_state():
         state = json.load(f)
     if not state.get("plot_urls") and state.get("turn"):
         state["plot_urls"] = get_plot_urls_for_turn(int(state["turn"]))
+    turn_num = state.get("turn")
+    if turn_num:
+        _, filtered_path = _recording_paths(int(turn_num))
+        if filtered_path.exists():
+            state["filtered_audio_url"] = state.get("filtered_audio_url") or _audio_api_url(int(turn_num), "filtered")
+            state["raw_audio_url"] = state.get("raw_audio_url") or _audio_api_url(int(turn_num), "raw")
     if history:
         from ai_utils import style_display_name
         state["conversation"] = history.get_ui_messages()
@@ -617,6 +649,24 @@ def get_latest_state():
         state["explanation_style_label"] = style_display_name(history.explanation_style)
         state["has_dsp_context"] = latest_dsp_context is not None
     return JSONResponse(content=state)
+
+
+@app.get("/api/audio/turn/{turn}/{kind}")
+def get_turn_audio(turn: int, kind: str):
+    """Stream saved raw or filtered WAV for a turn (browser-safe int16 PCM)."""
+    if kind not in ("raw", "filtered"):
+        raise HTTPException(status_code=400, detail="kind must be 'raw' or 'filtered'")
+    raw_path, filtered_path = _recording_paths(turn)
+    path = raw_path if kind == "raw" else filtered_path
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Audio not found for turn {turn} ({kind})")
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        filename=path.name,
+        headers={"Accept-Ranges": "bytes"},
+    )
+
 
 @app.get("/api/history")
 def get_history_log():

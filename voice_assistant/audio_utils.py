@@ -146,35 +146,44 @@ def save_wav(
     audio_data: np.ndarray,
     sample_rate: int,
     filename: str = "recording.wav",
+    output_dir: str | None = None,
 ) -> str:
     """
     Save a numpy audio array to a WAV file on disk.
 
     Parameters:
     -----------
-    audio_data  : numpy array of audio samples
+    audio_data  : numpy array of audio samples (float or int16)
     sample_rate : int - the sample rate used during recording
-    filename    : str - name for the output file (saved in OUTPUT_DIR)
+    filename    : str - output file name or absolute path
+    output_dir  : str - optional directory when filename is a basename only
 
     Returns:
     --------
     str - the full file path of the saved WAV file
-
-    WAV format:
-    - Standard uncompressed audio format
-    - Supported by virtually all audio software
-    - scipy.io.wavfile handles the binary header and data automatically
     """
-    ensure_output_dir()
-    
-    # Build full path: e.g., "recordings/recording.wav"
-    filepath: str = os.path.join(OUTPUT_DIR, filename)
-    
+    if os.path.isabs(filename):
+        filepath = filename
+    else:
+        base_dir = output_dir or OUTPUT_DIR
+        os.makedirs(base_dir, exist_ok=True)
+        filepath = os.path.join(base_dir, filename)
+
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+
+    data = np.asarray(audio_data)
+    if np.issubdtype(data.dtype, np.floating):
+        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+        peak = np.max(np.abs(data))
+        if peak > 1e-8:
+            data = data / peak
+        data = np.clip(data, -1.0, 1.0)
+        data = (data * 32767).astype(np.int16)
+    elif data.dtype != np.int16:
+        data = data.astype(np.int16)
+
     try:
-        # scipy.io.wavfile.write(filename, rate, data)
-        # - rate: sample rate in Hz
-        # - data: numpy array (int16 or float32)
-        wav.write(filepath, sample_rate, audio_data)
+        wav.write(filepath, int(sample_rate), data)
         
         # Calculate file size for feedback
         file_size_kb = os.path.getsize(filepath) / 1024
