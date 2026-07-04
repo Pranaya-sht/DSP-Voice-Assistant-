@@ -68,12 +68,10 @@ def apply_filter(audio: np.ndarray, sample_rate: int, filter_type: str) -> np.nd
         return filtfilt(b, a, audio_float)
         
     elif filter_type == "wiener":
-        # Scipy's Wiener filter for adaptive noise suppression
-        # Returns a filtered estimate of the input using local variance
+        # Scipy Wiener filter — local noise suppression (subtle on short clips)
         try:
-            return wiener(audio_float)
+            return wiener(audio_float, mysize=min(29, max(5, len(audio_float) // 100 | 1)))
         except Exception:
-            # Fallback if Wiener filter fails due to dimension mismatch or signal size
             return audio_float
             
     elif filter_type == "none" or filter_type is None:
@@ -82,6 +80,30 @@ def apply_filter(audio: np.ndarray, sample_rate: int, filter_type: str) -> np.nd
     else:
         print(f"[DSP] Warning: Unknown filter type '{filter_type}'. Returning original signal.")
         return audio_float
+
+
+def apply_aggressive_cleaning(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+    """Strong cleaning chain: highpass -> bandpass -> Wiener (always)."""
+    cleaned = apply_filter(audio, sample_rate, "highpass")
+    cleaned = apply_filter(cleaned, sample_rate, "bandpass")
+    cleaned = apply_filter(cleaned, sample_rate, "wiener")
+    return cleaned.astype(np.float32)
+
+
+def apply_adaptive_cleaning(
+    audio: np.ndarray,
+    sample_rate: int,
+    filter_type: str,
+    snr_db: float | None = None,
+) -> np.ndarray:
+    """
+    Apply primary filter, then extra noise reduction when SNR is low.
+    Makes cleaned audio audibly different on noisy recordings.
+    """
+    cleaned = apply_filter(audio, sample_rate, filter_type)
+    if snr_db is not None and snr_db < 15.0 and filter_type != "wiener":
+        cleaned = apply_filter(cleaned, sample_rate, "wiener")
+    return cleaned.astype(np.float32)
 
 def extract_features(
     audio: np.ndarray,
@@ -143,9 +165,16 @@ def run_adaptive_dsp(audio: np.ndarray, sample_rate: int, dsp_params: dict) -> d
     filter_type = dsp_params["filter"]
     fft_size = dsp_params["fft_size"]
     feature_set = dsp_params["feature_set"]
+    snr_db = dsp_params.get("snr_db")
+    aggressive = dsp_params.get("aggressive_clean", False)
     
-    # 1. Apply Filter
-    filtered_audio = apply_filter(audio, sample_rate, filter_type)
+    # 1. Apply filter chain
+    if aggressive:
+        filtered_audio = apply_aggressive_cleaning(audio, sample_rate)
+        filter_applied = "aggressive"
+    else:
+        filtered_audio = apply_adaptive_cleaning(audio, sample_rate, filter_type, snr_db=snr_db)
+        filter_applied = filter_type
     
     # 2. Extract Features
     features = extract_features(filtered_audio, sample_rate, feature_set, fft_size)
@@ -155,7 +184,7 @@ def run_adaptive_dsp(audio: np.ndarray, sample_rate: int, dsp_params: dict) -> d
         "features": features,
         "feature_set": feature_set,
         "fft_size": fft_size,
-        "filter_applied": filter_type
+        "filter_applied": filter_applied
     }
 
 if __name__ == "__main__":

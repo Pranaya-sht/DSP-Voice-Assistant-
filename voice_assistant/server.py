@@ -165,16 +165,40 @@ def save_turn_recordings(
     filtered_audio: np.ndarray,
     sample_rate: int,
 ) -> tuple[str, str, str, str]:
-    """Save int16 WAVs and return (raw_path, filtered_path, raw_url, filtered_url)."""
-    from audio_utils import save_wav
+    """Save int16 WAVs with matched peak so A/B playback reflects real cleaning."""
+    from audio_utils import save_wav_pair
 
     raw_path, filtered_path = _recording_paths(turn)
-    save_wav(raw_audio, sample_rate, filename=str(raw_path))
-    save_wav(filtered_audio, sample_rate, filename=str(filtered_path))
+    save_wav_pair(raw_audio, filtered_audio, sample_rate, str(raw_path), str(filtered_path))
     raw_url = _audio_api_url(turn, "raw")
     filtered_url = _audio_api_url(turn, "filtered")
     print(f"[Server] Saved recordings: {filtered_path.name} ({filtered_path.stat().st_size} bytes)")
     return str(raw_path), str(filtered_path), raw_url, filtered_url
+
+
+def cleaning_note_for_filter(filter_type: str, snr_db: float, aggressive: bool = False) -> str:
+    """Explain what cleaning did and why original vs cleaned may sound similar."""
+    if aggressive:
+        return (
+            "Aggressive clean ON: highpass (100 Hz) + bandpass (300–3400 Hz) + Wiener noise reduction. "
+            "You should hear less rumble, hiss, and background noise than the original."
+        )
+    f = (filter_type or "none").lower()
+    if f == "none":
+        return "No filter applied — audio was already clean (high SNR). Original and cleaned will sound the same."
+    if f == "bandpass":
+        if snr_db >= 18:
+            return "Bandpass (300–3400 Hz) keeps speech frequencies; difference is subtle on clean speech — compare the FFT chart or use a noisier clip."
+        return "Bandpass (300–3400 Hz) isolates speech; low rumble and hiss reduced. Wiener pass added because SNR is low."
+    if f == "notch":
+        return "Notch filter removes 50/60 Hz electrical hum — subtle unless hum was present."
+    if f == "highpass":
+        return "Highpass removes low-frequency rumble below 100 Hz — listen for less bass/thump."
+    if f == "lowpass":
+        return "Lowpass removes high-frequency hiss above 4 kHz."
+    if f == "wiener":
+        return "Wiener noise reduction suppresses background noise — effect depends on noise level."
+    return f"Applied {f.upper()} filter."
 
 def generate_turn_plots(
     turn: int,
@@ -464,6 +488,7 @@ async def run_pipeline_on_audio(
     audio_data: np.ndarray,
     sample_rate: int,
     explanation_style: str = "auto",
+    aggressive_clean: bool = False,
 ):
     """Run the 8-stage voice assistant and adaptive DSP pipeline asynchronously."""
     global turn_count, history, whisper_model, dsp_engine, latest_dsp_context
@@ -490,10 +515,14 @@ async def run_pipeline_on_audio(
     
     # 3. Decision predictions
     dsp_params = dsp_engine.predict(feature_summary)
+    dsp_params["snr_db"] = feature_summary.get("snr_db")
+    dsp_params["aggressive_clean"] = aggressive_clean
+    dsp_params["elapsed_ms"] = 0  # filled later
     
     # 4. Adaptive DSP Filtering
     adaptive_result = run_adaptive_dsp(audio_normalized, sample_rate, dsp_params)
     filtered_audio = adaptive_result["filtered_audio"]
+    filter_used = adaptive_result.get("filter_applied", dsp_params.get("filter", "none"))
     
     # 5. Environment classification (CNN14) — optional for speed
     if SKIP_CNN14:
@@ -600,7 +629,13 @@ async def run_pipeline_on_audio(
     state["tts_audio_url"] = tts_audio_url
     state["raw_audio_url"] = raw_audio_url
     state["filtered_audio_url"] = filtered_audio_url
-    state["filter_applied"] = dsp_params.get("filter", "none")
+    state["filter_applied"] = filter_used
+    state["aggressive_clean"] = aggressive_clean
+    state["cleaning_note"] = cleaning_note_for_filter(
+        dsp_params.get("filter", "none"),
+        feature_summary.get("snr_db", 0),
+        aggressive=aggressive_clean,
+    )
     state["conversation"] = history.get_ui_messages() if history else []
     state["explanation_style"] = history.explanation_style if history else "auto"
     from ai_utils import style_display_name
@@ -690,6 +725,7 @@ def get_test_files():
 async def process_audio(
     file: UploadFile = File(...),
     explanation_style: str = Form("auto"),
+    aggressive_clean: str = Form("false"),
 ):
     """Process an uploaded audio file (or browser microphone recording)."""
     import numpy as np
@@ -708,7 +744,11 @@ async def process_audio(
         raw_audio, sr = load_audio_file(str(temp_file_path))
         
         # Run processing pipeline
-        state = await run_pipeline_on_audio(raw_audio, sr, explanation_style=explanation_style)
+        state = await run_pipeline_on_audio(
+            raw_audio, sr,
+            explanation_style=explanation_style,
+            aggressive_clean=aggressive_clean.lower() in ("true", "1", "yes"),
+        )
         return JSONResponse(content=state)
     except Exception as e:
         traceback.print_exc()
@@ -721,6 +761,7 @@ async def process_audio(
 async def run_test_file(
     filename: str = Form(...),
     explanation_style: str = Form("auto"),
+    aggressive_clean: str = Form("false"),
 ):
     """Process a pre-loaded test audio file from the dropdown selector."""
     import numpy as np
@@ -734,7 +775,11 @@ async def run_test_file(
         raw_audio, sr = load_audio_file(str(test_file_path))
         
         # Run processing pipeline
-        state = await run_pipeline_on_audio(raw_audio, sr, explanation_style=explanation_style)
+        state = await run_pipeline_on_audio(
+            raw_audio, sr,
+            explanation_style=explanation_style,
+            aggressive_clean=aggressive_clean.lower() in ("true", "1", "yes"),
+        )
         return JSONResponse(content=state)
     except Exception as e:
         traceback.print_exc()

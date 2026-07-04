@@ -466,6 +466,23 @@
             text-decoration: underline;
         }
 
+        .toggle-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.65rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text);
+        }
+
+        .toggle-row input {
+            margin-top: 0.2rem;
+            accent-color: var(--primary);
+            width: 1rem;
+            height: 1rem;
+            cursor: pointer;
+        }
+
         .audio-playback {
             margin-top: auto;
             width: 100%;
@@ -791,6 +808,19 @@
             </button>
         </div>
 
+        <div class="section-title">Audio Cleaning</div>
+        <div class="ctrl-card">
+            <label class="toggle-row" for="aggressive-clean-toggle">
+                <input type="checkbox" id="aggressive-clean-toggle">
+                <span>
+                    <strong>Aggressive clean</strong><br>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">
+                        Highpass + bandpass + Wiener — stronger noise removal
+                    </span>
+                </span>
+            </label>
+        </div>
+
         <div class="section-title">Explanation Style</div>
         <div class="ctrl-card">
             <div class="style-pills" id="sidebar-style-pills">
@@ -890,6 +920,7 @@
                     <div class="audio-compare-title">✨ Cleaned Audio (DSP filtered)</div>
                     <audio id="filtered-audio-player" class="audio-playback" controls style="display: none;"></audio>
                     <a id="filtered-audio-download" class="audio-download-link" href="#" download style="display: none;">Download cleaned WAV</a>
+                    <div id="cleaning-note" class="chat-hint" style="margin-top: 0.35rem;"></div>
                 </div>
             </div>
 
@@ -1030,6 +1061,7 @@
         let isRecording = false;
         let currentTurn = null;
         let currentExplanationStyle = 'auto';
+        let aggressiveClean = localStorage.getItem('aggressiveClean') === 'true';
 
         const PLOT_LABELS = {
             waveform_plot: 'Waveform Comparison',
@@ -1041,6 +1073,14 @@
 
         // Auto-run on start to load state and dropdown options
         window.addEventListener('DOMContentLoaded', () => {
+            const aggToggle = document.getElementById('aggressive-clean-toggle');
+            if (aggToggle) {
+                aggToggle.checked = aggressiveClean;
+                aggToggle.addEventListener('change', () => {
+                    aggressiveClean = aggToggle.checked;
+                    localStorage.setItem('aggressiveClean', aggressiveClean ? 'true' : 'false');
+                });
+            }
             fetchTestFiles();
             refreshState();
             loadConversationMeta();
@@ -1048,6 +1088,7 @@
 
         function appendExplanationStyle(formData) {
             formData.append('explanation_style', currentExplanationStyle);
+            formData.append('aggressive_clean', aggressiveClean ? 'true' : 'false');
             return formData;
         }
 
@@ -1172,10 +1213,19 @@
                 const label = filtCard.querySelector('.audio-compare-title');
                 if (label) {
                     const f = (state.filter_applied || 'none').toUpperCase();
-                    label.textContent = f === 'NONE'
-                        ? '✨ Processed Audio (no filter applied)'
-                        : `✨ Cleaned Audio (${f} filter)`;
+                    if (state.aggressive_clean || f === 'AGGRESSIVE') {
+                        label.textContent = '✨ Cleaned Audio (Aggressive: highpass + bandpass + Wiener)';
+                    } else if (f === 'NONE') {
+                        label.textContent = '✨ Processed Audio (no filter applied)';
+                    } else {
+                        label.textContent = `✨ Cleaned Audio (${f} filter)`;
+                    }
                 }
+            }
+
+            const noteEl = document.getElementById('cleaning-note');
+            if (noteEl) {
+                noteEl.textContent = state.cleaning_note || '';
             }
         }
 
@@ -1431,7 +1481,9 @@
 
             // Top metrics
             document.getElementById('val-turn').innerText = state.turn ? `#${state.turn}` : '--';
-            document.getElementById('val-filter').innerText = (state.pipeline.filter || "none").toUpperCase();
+            document.getElementById('val-filter').innerText = state.aggressive_clean
+                ? 'AGGRESSIVE'
+                : (state.pipeline.filter || "none").toUpperCase();
             document.getElementById('val-fft').innerText = state.pipeline.fft_size || "--";
             document.getElementById('val-snr').innerText = (state.features.snr_db).toFixed(2) + " dB";
             document.getElementById('val-noise').innerText = (state.features.noise_level_db).toFixed(2) + " dB";

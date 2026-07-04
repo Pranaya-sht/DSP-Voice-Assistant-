@@ -184,24 +184,45 @@ def save_wav(
 
     try:
         wav.write(filepath, int(sample_rate), data)
-        
-        # Calculate file size for feedback
         file_size_kb = os.path.getsize(filepath) / 1024
-        duration_s = len(audio_data) / sample_rate
-        
-        print(f"[Audio] 💾 WAV saved: '{filepath}'")
-        print(f"[Audio]    Duration : {duration_s:.2f} seconds")
-        print(f"[Audio]    File size: {file_size_kb:.1f} KB")
-        
+        duration_s = len(data) / sample_rate
+        print(f"[Audio] WAV saved: '{filepath}' ({duration_s:.2f}s, {file_size_kb:.1f} KB)")
         return filepath
-
     except PermissionError:
-        print(f"[Audio] ❌ Permission denied writing to '{filepath}'.")
-        print("[Audio]    Make sure the file is not open in another program.")
+        print(f"[Audio] Permission denied writing to '{filepath}'.")
         raise
     except Exception as e:
-        print(f"[Audio] ❌ Failed to save WAV: {e}")
+        print(f"[Audio] Failed to save WAV: {e}")
         raise
+
+
+def _float_to_int16_pcm(data: np.ndarray, peak_ref: float | None = None) -> np.ndarray:
+    """Convert float audio to int16; optional shared peak for matched A/B levels."""
+    data = np.nan_to_num(np.asarray(data, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+    peak = peak_ref if peak_ref and peak_ref > 1e-8 else float(np.max(np.abs(data)))
+    if peak > 1e-8:
+        data = data / peak
+    data = np.clip(data, -1.0, 1.0)
+    return (data * 32767).astype(np.int16)
+
+
+def save_wav_pair(
+    raw_audio: np.ndarray,
+    filtered_audio: np.ndarray,
+    sample_rate: int,
+    raw_path: str,
+    filtered_path: str,
+) -> tuple[str, str]:
+    """Save raw + filtered WAVs using the same peak reference for fair comparison."""
+    os.makedirs(os.path.dirname(os.path.abspath(raw_path)), exist_ok=True)
+    peak_ref = max(
+        float(np.max(np.abs(np.asarray(raw_audio, dtype=np.float32)))),
+        float(np.max(np.abs(np.asarray(filtered_audio, dtype=np.float32)))),
+        1e-8,
+    )
+    wav.write(raw_path, int(sample_rate), _float_to_int16_pcm(raw_audio, peak_ref))
+    wav.write(filtered_path, int(sample_rate), _float_to_int16_pcm(filtered_audio, peak_ref))
+    return raw_path, filtered_path
 
 
 # ─── WAV File Loading ─────────────────────────────────────────────────────────
