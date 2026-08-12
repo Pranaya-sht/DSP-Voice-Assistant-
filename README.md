@@ -40,8 +40,8 @@ Instead of sending raw microphone input directly to an LLM, this system analyzes
        │
        ▼
 [ Text-to-Speech ] (Edge-TTS Neural / pyttsx3 Offline)
-
-Key Features
+```
+## Key Features
 Adaptive Audio Cleaning: Dynamically selects Butterworth (bandpass/highpass/lowpass), Notch (50/60 Hz hum suppression), or Wiener filters based on acoustic metrics.
 Explainable AI (XAI):
 SHAP Spectral Mapping: Maps Random Forest feature weights back to specific FFT frequency bands driving the filter choice.
@@ -51,7 +51,7 @@ A/B Audio Comparison: Generates synchronized raw and filtered PCM WAV files for 
 Context-Aware LLM Reasoning: Prompts the LLM with structured acoustic data from the current turn, enabling it to answer technical questions about signal quality, noise floor, or filtering choices.
 Adaptive Explanation Modes: Dynamically changes explanation tone based on prompt context or UI selection (Auto, Like I'm 10, College Level, Mathematical, Visual, Analogy).
 Auto-Correction Engine: Includes an automated test suite (test_audio_pipeline.py) that evaluates predictions against ground-truth audio files and retrains the Random Forest with augmented jitter samples if mismatches occur.
-📁 Repository Structure
+## 📁 Repository Structure
 code
 Text
 ├── Dockerfile                      # Container setup for Hugging Face Spaces (Port 7860)
@@ -76,7 +76,7 @@ Text
     ├── templates/
     │   └── index.html              # Glassmorphism single-page application UI
     └── test/                       # Audio test suite (.wav files)
-⚙️ Installation & Setup
+## ⚙️ Installation & Setup
 Prerequisites
 Python 3.11+
 FFmpeg: Required for audio decoding via pydub and edge-tts.
@@ -160,7 +160,7 @@ GET	/api/state	Returns JSON state for the active turn
 GET	/api/history	Returns the session turn log
 GET	/api/audio/turn/{turn}/{kind}	Streams browser-compatible PCM WAV (raw or filtered)
 POST	/api/clear	Clears conversation memory and temporary JSON states
-🐳 Docker & Hugging Face Spaces Deployment
+##🐳 Docker & Hugging Face Spaces Deployment
 Build and run locally using Docker:
 code
 Bash
