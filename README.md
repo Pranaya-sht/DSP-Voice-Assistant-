@@ -12,7 +12,7 @@ Instead of sending raw microphone input directly to an LLM, this system analyzes
 
 ## 🏗️ Architecture & Pipeline Flow
 
-
+```text
 [ Audio Input ] (Mic / Upload / Test WAV)
        │
        ▼
@@ -40,7 +40,7 @@ Instead of sending raw microphone input directly to an LLM, this system analyzes
        │
        ▼
 [ Text-to-Speech ] (Edge-TTS Neural / pyttsx3 Offline)
- 
+
 Key Features
 Adaptive Audio Cleaning: Dynamically selects Butterworth (bandpass/highpass/lowpass), Notch (50/60 Hz hum suppression), or Wiener filters based on acoustic metrics.
 Explainable AI (XAI):
