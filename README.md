@@ -1,5 +1,7 @@
 
-##Adaptive DSP Voice Assistant
+Adaptive DSP Voice Assistant
+
+
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
 
 
