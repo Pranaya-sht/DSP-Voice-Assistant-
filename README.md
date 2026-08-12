@@ -1,11 +1,11 @@
 
+##Adaptive DSP Voice Assistant
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
 
 
-Here is a clean, developer-focused README.md update for your repository. It is
-written in a direct, technical tone without fluff or generic AI phrasing.
 
-Adaptive DSP Voice Assistant
+
+
 
 A real-time voice processing pipeline and interactive web workspace that applies
 adaptive Digital Signal Processing (DSP) to audio before performing
